@@ -1,0 +1,7 @@
+package-as: ForeverTotems
+
+ignore:
+  - tests
+  - .github
+  - README.md
+  - CHANGELOG.md
