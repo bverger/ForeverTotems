@@ -1,7 +1,13 @@
 package-as: ForeverTotems
 
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
 ignore:
   - tests
   - .github
   - README.md
   - CHANGELOG.md
+  - sync.sh
+  - .gitignore
