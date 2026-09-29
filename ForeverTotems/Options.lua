@@ -488,7 +488,7 @@ local function BuildWindow()
             if v then ns.TotemBar:SyncActiveSet() end
         end)
     y = y - 24
-    MakeCheck(content, "Swing timer bar", x, y,
+    MakeCheck(content, "Swing timer bar (approximate, no combat log here)", x, y,
         function() return db.swing.enabled end,
         function(v) db.swing.enabled = v; ns.Bar:UpdateSwing() end)
     y = y - 24
@@ -792,6 +792,8 @@ local function HandleSlash(input)
     elseif cmd == "clicktest" then
         local on = ns.Bar:ToggleClickTest()
         ns:Print("Click tracing: " .. (on and "ON, now click a bar button" or "OFF"))
+    elseif cmd == "swingstate" then
+        ns:ShowText("Swing timer state", ns.Swing:StateReport())
     elseif cmd == "swingprobe" then
         local on = ns.Swing:ToggleProbe()
         if on then
@@ -842,7 +844,7 @@ local function HandleSlash(input)
         ns.db.debug = not ns.db.debug
         ns:Print("Debug: " .. (ns.db.debug and "ON" or "OFF"))
     else
-        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n>, sound, call, makemacro, sync, check, weapon, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
+        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n>, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
     end
 end
 

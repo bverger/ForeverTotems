@@ -30,7 +30,7 @@ ns.DEFAULT_ORDER = { FIRE, EARTH, WATER, AIR }
 -- Defaults
 --------------------------------------------------------------------------------
 local defaults = {
-    dbVersion = 2,
+    dbVersion = 4,
     bar = {
         point = "CENTER", x = 0, y = -180,
         scale = 1.0, size = 44, spacing = 6,
@@ -461,6 +461,13 @@ ef:SetScript("OnEvent", function(self, event, ...)
         -- The purge module is gone: the client will not let any addon read
         -- enemy auras in combat nor hook the combat log.
         ns.db.purge = nil
+
+        -- Back on by request: the cycle now anchors itself on the first hit
+        -- that lands, which is what made it drift before.
+        if (ns.db.dbVersion or 1) < 4 then
+            ns.db.swing.enabled = true
+            ns.db.dbVersion = 4
+        end
 
         local charName = UnitName("player") or "?"
         local realm = GetRealmName() or "?"
