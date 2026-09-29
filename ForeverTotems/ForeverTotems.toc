@@ -8,7 +8,7 @@
 ## Category: Class
 ## X-License: MIT
 ## X-Category: Combat
-## X-Curse-Project-ID: 000000
+## X-Curse-Project-ID: 1718174
 
 Core.lua
 Sets.lua
