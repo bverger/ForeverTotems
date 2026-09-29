@@ -2,7 +2,7 @@
 ## Title: Forever Totems
 ## Notes: Shaman totem manager: bar with countdowns, one-click sets, quick recast and range warnings.
 ## Author: bverger
-## Version: 1.0.0
+## Version: 1.0.1
 ## IconTexture: Interface\Icons\Spell_Nature_StoneClawTotem
 ## SavedVariables: ForeverTotemsDB
 ## Category: Class

@@ -76,6 +76,7 @@ FrameMethods.UnregisterEvent = function(self, e) self.__events[e] = nil end
 FrameMethods.SetHeight = function(self, h) self.__height = h end
 FrameMethods.SetAllPoints = function(self) self.__allPoints = true end
 FrameMethods.SetColorTexture = function(self, r, g, b, a) self.__color = { r, g, b, a } end
+FrameMethods.SetStatusBarColor = function(self, r, g, b, a) self.__barColor = { r, g, b, a } end
 FrameMethods.SetTexture = function(self, t) self.__texture = t end
 FrameMethods.SetText = function(self, t) self.__text = t end
 FrameMethods.SetAlpha = function(self, a) self.__alpha = a end
@@ -672,19 +673,95 @@ Step("detecta el imbue leyendo el tooltip del arma", function()
 end)
 
 print("\n=== Swing timer ===")
-Step("arranca solo al detectar el auto-ataque", function()
-    ns.Swing:Enable()
-    _G.__autoAttack = true          -- sin depender de PLAYER_ENTER_COMBAT
+local function StartSwinging()
+    _G.__autoAttack = false
     ns.Swing:Update()
-    assert(ns.Swing:IsActive(), "deberia estar contando")
-    assert(math.abs(ns.Swing:Remaining() - 3.6) < 0.01, "deberia usar la velocidad del arma")
-    assert(not ns.Swing:IsMeasured(), "al empezar es prediccion, no medida")
+    now = now + 5            -- separacion suficiente del golpe anterior
+    _G.__autoAttack = true
+    ns.Swing:Update()
+    FireEvent("UNIT_COMBAT", "target", "WOUND")   -- el golpe que ancla el ciclo
+    assert(ns.Swing:IsActive(), "el arranque de la prueba no ha anclado")
+end
+
+Step("viene activado", function()
+    assert(ns.db.swing.enabled == true, "deberia venir activado")
+end)
+Step("el primer impacto ancla el ciclo aunque llegue pronto", function()
+    ns.Swing:Enable()
+    _G.__autoAttack = false
+    ns.Swing:Update()
+    _G.__autoAttack = true
+    _G.__attackSpeed = 3.6
+    ns.Swing:Update()                      -- armada, sin ancla
+    now = now + 0.8
+    FireEvent("UNIT_COMBAT", "target", "WOUND")
+    assert(math.abs(ns.Swing:Remaining() - 3.6) < 0.05,
+        "el primer impacto debe anclar, quedan " .. ns.Swing:Remaining())
+    assert(ns.Swing:IsMeasured(), "y pasar a medido")
+end)
+Step("ya anclado, un impacto demasiado seguido se ignora", function()
+    now = now + 0.8
+    local before = ns.Swing:Remaining()
+    FireEvent("UNIT_COMBAT", "target", "WOUND")
+    assert(math.abs(ns.Swing:Remaining() - before) < 0.01,
+        "ningun arma golpea dos veces en 0.8s")
+end)
+Step("con el auto-ataque activo pero sin llegar, no hay barra", function()
+    ns.Swing:Enable()
+    _G.__autoAttack = false
+    ns.Swing:Update()
+    _G.__autoAttack = true          -- click derecho desde lejos
+    ns.Swing:Update()
+    assert(not ns.Swing:IsActive(), "no debe contar hasta que un golpe conecte")
+    ns.Bar:UpdateSwing()
+    assert(not ns.Bar.swingBar:IsShown(), "la barra no deberia verse mientras te acercas")
+end)
+Step("al conectar el primer golpe aparece y cuenta", function()
+    now = now + 5                    -- lo que tardas en llegar
+    FireEvent("UNIT_COMBAT", "target", "WOUND")
+    assert(ns.Swing:IsActive(), "ahora si deberia contar")
+    assert(math.abs(ns.Swing:Remaining() - 3.6) < 0.05, "deberia usar la velocidad del arma")
+    assert(ns.Swing:IsMeasured(), "y ser una medida, no una prediccion")
 end)
 Step("un golpe que aterriza reinicia el reloj", function()
-    now = now + 2
+    now = now + 3.5          -- a la cadencia del arma, que es lo que lo identifica
     FireEvent("UNIT_COMBAT", "target", "WOUND")
     assert(math.abs(ns.Swing:Remaining() - 3.6) < 0.01, "no ha reiniciado: " .. ns.Swing:Remaining())
     assert(ns.Swing:IsMeasured(), "ahora si es medido")
+end)
+Step("recibir un golpe no reinicia tu swing", function()
+    _G.__autoAttack = true
+    ns.Swing:Update()
+    now = now + 3.0                       -- casi al final de la ventana
+    local before = ns.Swing:Remaining()
+    FireEvent("UNIT_COMBAT", "targettarget", "WOUND")   -- el bicho pegandote a ti
+    assert(math.abs(ns.Swing:Remaining() - before) < 0.01,
+        "un golpe recibido no debe tocar tu swing")
+end)
+Step("el totem pegando cada 2s no roba la cadencia", function()
+    StartSwinging()                        -- anclado con un golpe tuyo
+    for tick = 1, 3 do
+        now = now + 2.0                    -- cadencia del Searing Totem
+        local before = ns.Swing:Remaining()
+        FireEvent("UNIT_COMBAT", "target", "WOUND")
+        if tick == 1 then
+            assert(math.abs(ns.Swing:Remaining() - before) < 0.01,
+                "2s no es la cadencia de un arma de 3.6s")
+        end
+    end
+end)
+Step("un golpe a la cadencia del arma si resincroniza", function()
+    StartSwinging()
+    now = now + 3.5                        -- una velocidad de arma despues
+    FireEvent("UNIT_COMBAT", "target", "WOUND")
+    assert(math.abs(ns.Swing:Remaining() - 3.6) < 0.05, "deberia haber resincronizado")
+    assert(ns.Swing:IsMeasured(), "y contar como medido")
+end)
+Step("tras perder el hilo, el siguiente golpe reengancha", function()
+    StartSwinging()
+    now = now + 9                          -- mucho mas de vez y media el swing
+    FireEvent("UNIT_COMBAT", "target", "WOUND")
+    assert(math.abs(ns.Swing:Remaining() - 3.6) < 0.05, "deberia reenganchar")
 end)
 Step("dos impactos seguidos no reinician dos veces", function()
     now = now + 0.2
@@ -709,8 +786,7 @@ Step("el dano de un totem no arranca la barra fuera de combate", function()
     assert(not ns.Bar.swingBar:IsShown(), "la barra no deberia verse")
 end)
 Step("encadena el siguiente swing al acabarse", function()
-    _G.__autoAttack = true
-    ns.Swing:Update()
+    StartSwinging()
     now = now + 3.6 + 0.3            -- se acaba la ventana y nadie avisa del golpe
     ns.Swing:Update()
     assert(ns.Swing:IsActive(), "deberia seguir contando")
@@ -719,8 +795,19 @@ Step("encadena el siguiente swing al acabarse", function()
         "deberia arrastrar el sobrante, quedan " .. remaining)
     assert(not ns.Swing:IsMeasured(), "el ciclo encadenado es prediccion")
 end)
+Step("si el cliente deja de dar la velocidad, no se congela", function()
+    _G.__attackSpeed = 3.6
+    StartSwinging()                   -- con velocidad buena, para cachearla
+    _G.__attackSpeed = 0              -- el cliente deja de darla en combate
+    now = now + 4
+    ns.Swing:Update()
+    assert(ns.Swing:IsActive(), "deberia seguir activa")
+    assert(ns.Swing:Remaining() > 0, "se ha quedado congelada en cero")
+    _G.__attackSpeed = 3.6
+end)
 Step("y se resincroniza si llega un golpe", function()
-    now = now + 1
+    now = now + 2.5          -- ya en la segunda mitad de la ventana
+    if not ns.Swing:IsActive() then StartSwinging() ; now = now + 2.5 end
     FireEvent("UNIT_COMBAT", "target", "WOUND")
     assert(math.abs(ns.Swing:Remaining() - 3.6) < 0.01, "no se ha resincronizado")
     assert(ns.Swing:IsMeasured(), "tras un golpe real es medido")
@@ -732,9 +819,24 @@ Step("al dejar de atacar se apaga", function()
     ns.Bar:UpdateSwing()
     assert(not ns.Bar.swingBar:IsShown(), "la barra deberia ocultarse")
 end)
-Step("la barra pinta el progreso", function()
-    _G.__autoAttack = true
+Step("el color no cambia, solo la marca ~", function()
+    StartSwinging()
+    ns.Bar:UpdateSwing()
+    local measured = ns.Bar.swingBar.__barColor
+    assert(measured, "el stub no ha registrado el color")
+    assert(not ns.Bar.swingBar.text.__text:find("~"), "medido no debe llevar la marca")
+
+    now = now + 4.0                  -- se acaba sin confirmacion: pasa a predicho
     ns.Swing:Update()
+    ns.Bar:UpdateSwing()
+    local predicted = ns.Bar.swingBar.__barColor
+    assert(ns.Bar.swingBar.text.__text:find("~"), "predicho debe llevar la marca ~")
+    for index = 1, 3 do
+        assert(measured[index] == predicted[index], "el color no deberia cambiar")
+    end
+end)
+Step("la barra pinta el progreso", function()
+    StartSwinging()
     now = now + 1.8
     ns.Bar:UpdateSwing()
     local value = ns.Bar.swingBar.__value

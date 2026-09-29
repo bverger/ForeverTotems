@@ -650,11 +650,9 @@ function Bar:UpdateSwing()
         bar.text:SetText("")
     end
 
-    if ns.Swing:IsMeasured() then
-        bar:SetStatusBarColor(0.9, 0.7, 0.2)
-    else
-        bar:SetStatusBarColor(0.5, 0.5, 0.55)
-    end
+    -- One colour throughout: the "~" already says when the cycle is predicted,
+    -- and a bar that changes colour under you is harder to read at a glance.
+    bar:SetStatusBarColor(0.9, 0.7, 0.2)
 end
 
 function Bar:UpdateWeaponButton()
