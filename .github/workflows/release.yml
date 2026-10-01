@@ -8,6 +8,11 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # New repositories hand the workflow a read-only token, which fails the
+    # "create a GitHub release" step with a 403 after the CurseForge upload
+    # has already succeeded.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
