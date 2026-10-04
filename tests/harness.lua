@@ -68,7 +68,13 @@ FrameMethods.CreateAnimationGroup = function(self) return NewObject(nil, self) e
 FrameMethods.CreateAnimation = function(self) return NewObject(nil, self) end
 FrameMethods.SetScript = function(self, script, fn) self.__scripts[script] = fn end
 FrameMethods.GetScript = function(self, script) return self.__scripts[script] end
-FrameMethods.HookScript = function(self, script, fn) self.__scripts[script] = fn end
+FrameMethods.HookScript = function(self, script, fn)
+    local previous = self.__scripts[script]
+    self.__scripts[script] = function(...)
+        if previous then previous(...) end
+        fn(...)
+    end
+end
 FrameMethods.RegisterForClicks = function(self, ...) self.__clicks = { ... } end
 FrameMethods.RegisterEvent = function(self, e) self.__events[e] = true end
 FrameMethods.IsEventRegistered = function(self, e) return self.__events[e] == true end
@@ -100,7 +106,8 @@ FrameMethods.Click = function(self, button)
     local post = self.__scripts.PostClick
     if post then post(self, button or "LeftButton") end
 end
-FrameMethods.GetFrameStrata = function(self) return "MEDIUM" end
+FrameMethods.GetFrameStrata = function(self) return self.__strata or "MEDIUM" end
+FrameMethods.SetFrameStrata = function(self, v) self.__strata = v end
 FrameMethods.GetEffectiveAlpha = function(self) return 1 end
 FrameMethods.IsMouseOver = function(self) return _G.__mouseOver == self end
 FrameMethods.SetValue = function(self, v) self.__value = v end
@@ -240,7 +247,7 @@ local SPELL_NAMES = {
     [8190] = "Magma Totem", [8143] = "Tremor Totem", [10595] = "Nature Resistance Totem",
     [403] = "Lightning Bolt", [99999] = "Totem del Vacio Eterno",
     [66842] = "Call of the Elements", [66843] = "Call of the Ancestors",
-    [370] = "Purge", [8017] = "Rockbiter Weapon", [8024] = "Flametongue Weapon",
+    [370] = "Purge", [17364] = "Stormstrike", [324] = "Lightning Shield", [52127] = "Water Shield", [36936] = "Totemic Recall", [108270] = "Totemic Projection", [8017] = "Rockbiter Weapon", [8024] = "Flametongue Weapon",
     [8033] = "Frostbrand Weapon", [8232] = "Windfury Weapon", [6363] = "Searing Totem", [6390] = "Stoneclaw Totem", [8154] = "Stoneskin Totem",
     [8075] = "Strength of Earth Totem",
 }
@@ -252,8 +259,16 @@ C_Spell = {
     end,
     GetSpellTexture = function() return 123456 end,
 }
+_G.__cooldowns = {}
+C_Spell.GetSpellCooldown = function(id)
+    if _G.__cooldownsBlocked then error("secretos", 2) end
+    local cd = _G.__cooldowns[id]
+    if not cd then return { startTime = 0, duration = 0 } end
+    return { startTime = cd.start, duration = cd.duration }
+end
 Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } }
 local BOOK = { 2484, 8071, 3599, 5394, 8512, 5675, 8190, 8143, 10595, 403, 99999, 66842, 66843,
+               36936, 108270, 324, 52127, 17364,
                8017, 8024, 8232 }
 C_SpellBook = {
     GetNumSpellBookSkillLines = function() return 1 end,
@@ -514,6 +529,190 @@ Step("el diagnostico de la barra informa de cada boton", function()
     local text = ns.Bar:Diagnose()
     assert(text:find("macrotext=/cast"), "no informa de la macro de los botones")
     assert(text:find("mouse=true"), "no informa del estado del raton")
+end)
+
+print("\n=== Aviso de cooldown recuperado ===")
+Step("vigila Stormstrike de fabrica", function()
+    ns.Cooldown:Rebuild()
+    assert(ns.Cooldown:Watched()["Stormstrike"], "deberia vigilar Stormstrike")
+end)
+Step("suena al recuperarse y no antes", function()
+    _G.__inCombat = true
+    local cues = 0
+    local real, realKey = ns.Warnings.PlayCue, ns.Warnings.PlayKey
+    ns.Warnings.PlayCue = function(self) cues = cues + 1 end
+    ns.Warnings.PlayKey = function(self) cues = cues + 1 return true end
+    _G.__cooldowns[17364] = { start = now, duration = 10 }
+    ns.Cooldown:Update()                 -- en cooldown
+    assert(cues == 0, "no debe sonar mientras esta en cooldown")
+    now = now + 11
+    _G.__cooldowns[17364] = nil          -- ya disponible
+    ns.Cooldown:Update()
+    ns.Warnings.PlayCue, ns.Warnings.PlayKey = real, realKey
+    assert(cues == 1, "deberia haber sonado una vez, sonó " .. cues)
+end)
+Step("el cooldown global no cuenta como cooldown", function()
+    _G.__inCombat = true
+    local cues = 0
+    local real, realKey = ns.Warnings.PlayCue, ns.Warnings.PlayKey
+    ns.Warnings.PlayCue = function(self) cues = cues + 1 end
+    ns.Warnings.PlayKey = function(self) cues = cues + 1 return true end
+    _G.__cooldowns[17364] = { start = now, duration = 1.5 }   -- GCD
+    ns.Cooldown:Update()
+    now = now + 2
+    _G.__cooldowns[17364] = nil
+    ns.Cooldown:Update()
+    ns.Warnings.PlayCue, ns.Warnings.PlayKey = real, realKey
+    assert(cues == 0, "el GCD no deberia disparar el aviso")
+end)
+Step("en combate, a ciegas, cuenta con la duracion aprendida", function()
+    _G.__inCombat = true
+    local cues = 0
+    local real, realKey = ns.Warnings.PlayCue, ns.Warnings.PlayKey
+    ns.Warnings.PlayCue = function(self) cues = cues + 1 end
+    ns.Warnings.PlayKey = function(self) cues = cues + 1 return true end
+    _G.__cooldowns[17364] = { start = now, duration = 10 }
+    ns.Cooldown:Update()                        -- aprende que dura 10
+    _G.__cooldownsBlocked = true                -- el cliente deja de contarlo
+    ns.Cooldown:OnCast("Stormstrike")
+    now = now + 5
+    ns.Cooldown:Update()
+    assert(cues == 0, "aun no toca")
+    now = now + 6
+    ns.Cooldown:Update()
+    _G.__cooldownsBlocked = false
+    ns.Warnings.PlayCue, ns.Warnings.PlayKey = real, realKey
+    assert(cues == 1, "deberia sonar contando por su cuenta, sonó " .. cues)
+end)
+Step("fuera de combate no avisa de nada", function()
+    _G.__inCombat = false
+    ns.db.cooldowns.combatOnly = true
+    local cues = 0
+    local real, realKey = ns.Warnings.PlayCue, ns.Warnings.PlayKey
+    ns.Warnings.PlayCue = function() cues = cues + 1 end
+    ns.Warnings.PlayKey = function() cues = cues + 1 return true end
+    _G.ForeverTotemsFlash.__shown = false
+    _G.__cooldowns[17364] = { start = now, duration = 10 }
+    ns.Cooldown:Update()
+    now = now + 11
+    _G.__cooldowns[17364] = nil
+    ns.Cooldown:Update()
+    ns.Warnings.PlayCue, ns.Warnings.PlayKey = real, realKey
+    assert(cues == 0, "no deberia sonar fuera de combate")
+    assert(not _G.ForeverTotemsFlash:IsShown(), "tampoco deberia destellar")
+end)
+Step("en combate si", function()
+    _G.__inCombat = true
+    local cues = 0
+    local real, realKey = ns.Warnings.PlayCue, ns.Warnings.PlayKey
+    ns.Warnings.PlayCue = function() cues = cues + 1 end
+    ns.Warnings.PlayKey = function() cues = cues + 1 return true end
+    _G.__cooldowns[17364] = { start = now, duration = 10 }
+    ns.Cooldown:Update()
+    now = now + 11
+    _G.__cooldowns[17364] = nil
+    ns.Cooldown:Update()
+    ns.Warnings.PlayCue, ns.Warnings.PlayKey = real, realKey
+    _G.__inCombat = false
+    assert(cues == 1, "en combate si deberia sonar, sonó " .. cues)
+end)
+Step("el destello aparece y se apaga solo", function()
+    _G.__inCombat = true
+    ns.db.cooldowns.flash = true
+    ns.Bar:FlashIcon(12345)
+    local flash = _G.ForeverTotemsFlash
+    assert(flash:IsShown(), "deberia verse")
+    assert(flash.icon.__texture == 12345, "no ha puesto el icono")
+    local onUpdate = flash:GetScript("OnUpdate")
+    onUpdate(flash, 0.3)
+    assert(flash:IsShown(), "a mitad deberia seguir")
+    assert(flash.__alpha < 1 and flash.__alpha > 0, "deberia ir desvaneciendose")
+    onUpdate(flash, 0.4)
+    assert(not flash:IsShown(), "pasados 0.7s deberia haberse ido")
+    _G.__inCombat = false
+end)
+Step("si lo apagas, no aparece", function()
+    ns.db.cooldowns.flash = false
+    _G.ForeverTotemsFlash.__shown = false
+    ns.Bar:FlashIcon(12345)
+    assert(not _G.ForeverTotemsFlash:IsShown(), "no deberia aparecer")
+    ns.db.cooldowns.flash = true
+end)
+Step("el aviso tiene sonido y canal propios", function()
+    _G.__sounds = {}
+    ns.db.cooldowns.soundChoice, ns.db.cooldowns.channel = "ready", "Master"
+    ns.Warnings:PlayKey(ns.db.cooldowns.soundChoice, ns.db.cooldowns.channel)
+    assert(#_G.__sounds == 1, "no ha sonado")
+    assert(_G.__sounds[1].id == SOUNDKIT.READY_CHECK, "sonido equivocado")
+    assert(_G.__sounds[1].channel == "Master", "deberia ir por Master para que se oiga")
+end)
+Step("se puede cambiar de sonido y de canal", function()
+    local antes = ns.db.cooldowns.soundChoice
+    ns.Cooldown:CycleSound()
+    assert(ns.db.cooldowns.soundChoice ~= antes, "no ha cambiado de sonido")
+    assert(ns.Cooldown:ToggleChannel() == "SFX", "no ha cambiado de canal")
+    ns.Cooldown:ToggleChannel()
+end)
+Step("se pueden vigilar y dejar de vigilar otros", function()
+    assert(ns.Cooldown:Watch("Lightning Shield"), "no ha anadido")
+    assert(ns.Cooldown:Watched()["Lightning Shield"], "no lo resuelve del libro")
+    assert(ns.Cooldown:Unwatch("Lightning Shield"), "no ha quitado")
+    assert(not ns.Cooldown:Watched()["Lightning Shield"], "sigue vigilado")
+end)
+
+print("\n=== Escudo de relampagos ===")
+Step("detecta los escudos que conoces", function()
+    ns.Shield:Enable()
+    local list = ns.Shield:Scan()
+    assert(#list == 2, "esperaba 2 escudos del libro, hay " .. #list)
+    assert(ns.Shield:GetChosen(), "no ha elegido ninguno")
+end)
+Step("lee las cargas del buff", function()
+    _G.__unit.player = { exists = true, auras = {
+        { name = "Lightning Shield", applications = 3, expirationTime = GetTime() + 600 },
+    } }
+    ns.Shield:Refresh()
+    assert(ns.Shield:IsUp(), "deberia verlo activo")
+    assert(ns.Shield:Charges() == 3, "cargas mal leidas: " .. ns.Shield:Charges())
+    assert(ns.Bar.shieldButton.timer.__text == "3", "el boton deberia mostrar las cargas")
+end)
+Step("avisa al entrar en combate sin escudo", function()
+    local alerts = 0
+    local real = ns.Warnings.Alert
+    ns.Warnings.Alert = function(self, ...) alerts = alerts + 1 return real(self, ...) end
+    _G.__unit.player.auras = {}
+    ns.Shield:Refresh()
+    ns.Shield:CheckForFight()
+    ns.Shield:CheckForFight()            -- no debe repetir
+    ns.Warnings.Alert = real
+    assert(alerts == 1, "ha avisado " .. alerts .. " veces")
+    assert(ns.Bar.shieldButton.timer.__text == "", "sin escudo no hay numero")
+end)
+Step("no avisa si lo llevas puesto", function()
+    local alerts = 0
+    local real = ns.Warnings.Alert
+    ns.Warnings.Alert = function(self, ...) alerts = alerts + 1 return real(self, ...) end
+    _G.__unit.player.auras = { { name = "Lightning Shield", applications = 3 } }
+    ns.Shield:Refresh()
+    ns.Shield:CheckForFight()
+    ns.Warnings.Alert = real
+    assert(alerts == 0, "no deberia avisar con el escudo puesto")
+end)
+Step("si el cliente oculta las auras, se calla", function()
+    _G.__aurasBlocked = true
+    local alerts = 0
+    local real = ns.Warnings.Alert
+    ns.Warnings.Alert = function(self, ...) alerts = alerts + 1 return real(self, ...) end
+    ns.Shield:Refresh()
+    ns.Shield:CheckForFight()
+    ns.Warnings.Alert = real
+    _G.__aurasBlocked = false
+    assert(alerts == 0, "no debe avisar sobre datos que no pudo leer")
+end)
+Step("el boton lanza el escudo elegido", function()
+    ns.Bar:ApplyAttributes()
+    local macro = _G.ForeverTotemsShieldButton:GetAttribute("macrotext")
+    assert(macro == "/cast Lightning Shield", "macro incorrecta: " .. tostring(macro))
 end)
 
 print("\n=== Encantamientos de arma ===")
@@ -843,34 +1042,6 @@ Step("la barra pinta el progreso", function()
     assert(value and value > 0.45 and value < 0.55, "el progreso deberia ir por la mitad, va por " .. tostring(value))
 end)
 
-print("\n=== Boton de Purge ===")
-Step("aparece y lanza el hechizo", function()
-    ns.Bar:Layout()
-    ns.Bar:ApplyAttributes()
-    assert(_G.ForeverTotemsPurgeButton:IsShown(), "deberia estar en la barra")
-    assert(_G.ForeverTotemsPurgeButton:GetAttribute("macrotext") == "/cast Purge",
-        "macro incorrecta: " .. tostring(_G.ForeverTotemsPurgeButton:GetAttribute("macrotext")))
-end)
-Step("no lee auras de nadie", function()
-    local touched = false
-    local real = C_UnitAuras.GetBuffDataByIndex
-    C_UnitAuras.GetBuffDataByIndex = function(...) touched = true return real(...) end
-    ns.Bar:Layout()
-    ns.Bar:UpdateAll()
-    C_UnitAuras.GetBuffDataByIndex = real
-    assert(not touched, "el boton no debe tocar las auras")
-end)
-Step("si no conoces Purge no aparece", function()
-    local realKnown = IsSpellKnown
-    IsSpellKnown = function() return false end
-    ns:Fire("SPELLS_REFRESHED")
-    local shown = _G.ForeverTotemsPurgeButton:IsShown()
-    IsSpellKnown = realKnown
-    ns:Fire("SPELLS_REFRESHED")
-    assert(not shown, "no deberia salir sin conocer el hechizo")
-    assert(_G.ForeverTotemsPurgeButton:IsShown(), "deberia volver al aprenderlo")
-end)
-
 print("\n=== Orden de los elementos ===")
 Step("el orden manda en la barra y en la macro", function()
     ns.db.bar.order = { ns.FIRE, ns.EARTH, ns.WATER, ns.AIR }
@@ -934,13 +1105,19 @@ Step("se pueden ocultar los huecos vacios", function()
     ns.Bar:Layout()
 end)
 
-print("\n=== Flechas para cambiar de totem ===")
-Step("cada hueco recibe su flecha", function()
-    ns.Flyout:UpdateArrows()
-    local arrow = ns.Bar.buttons[ns.FIRE].arrow
-    assert(arrow, "el hueco de fuego no tiene flecha")
-    assert(arrow:IsShown(), "la flecha deberia verse")
+print("\n=== La barra y el mapa ===")
+Step("al abrir el mapa la barra desaparece", function()
+    _G.WorldMapFrame = { IsShown = function() return true end }
+    ns.Bar:UpdateMapHiding()
+    assert(ns.Bar.frame.__alpha == 0, "deberia quedarse invisible con el mapa abierto")
 end)
+Step("al cerrarlo vuelve", function()
+    _G.WorldMapFrame = { IsShown = function() return false end }
+    ns.Bar:UpdateMapHiding()
+    assert(ns.Bar.frame.__alpha == 1, "deberia volver a verse")
+end)
+
+print("\n=== Flechas para cambiar de totem ===")
 Step("la flecha despliega los totems del elemento", function()
     local arrow = ns.Bar.buttons[ns.EARTH].arrow
     local opened = ns.Flyout:Open(ns.EARTH, arrow)
@@ -1139,13 +1316,40 @@ Step("cada hueco lanza su propio totem", function()
     assert(macro == "/cast " .. spell.name, "macro del hueco 1 incorrecta: " .. tostring(macro))
     assert(_G.ForeverTotemsButton1:GetAttribute("type2") == "destroytotem", "falta el clic derecho")
 end)
-Step("/ft call cambia entre los disponibles", function()
+Step("el boton de Call ofrece tambien los de gestion", function()
+    ns.TotemBar.spells, ns.TotemBar.management = nil, nil
+    local list = ns.TotemBar:GetButtonSpells()
+    local nombres = {}
+    for _, e in ipairs(list) do nombres[e.name] = e end
+    assert(nombres["Call of the Elements"], "falta Call of the Elements")
+    assert(nombres["Totemic Recall"], "falta Totemic Recall")
+    assert(nombres["Totemic Projection"], "falta Totemic Projection")
+    assert(nombres["Totemic Recall"].management, "deberia marcarse como gestion")
+end)
+Step("elegir uno de gestion cambia lo que lanza el boton", function()
+    ns.TotemBar:SetActiveCall({ name = "Totemic Recall" })
+    ns.Bar:ApplyAttributes()
+    assert(_G.ForeverTotemsCallButton:GetAttribute("macrotext") == "/cast Totemic Recall",
+        "macro incorrecta: " .. tostring(_G.ForeverTotemsCallButton:GetAttribute("macrotext")))
+end)
+Step("y no intenta sincronizar paginas con un hechizo de gestion", function()
+    assert(ns.TotemBar:GetPageForCall() == 1, "sin pagina valida deberia quedarse en la 1")
+    ns.TotemBar:SetActiveCall({ name = "Call of the Elements" })
+end)
+Step("los de gestion siguen fuera de las listas de totems", function()
+    ns:RefreshTotemSpells()
+    for _, e in ipairs(ns.totemSpells) do
+        assert(not e.name:find("Totemic"), "se ha colado en los totems: " .. e.name)
+    end
+end)
+Step("/ft call recorre todos y vuelve al principio", function()
+    local total = #ns.TotemBar:GetButtonSpells()
     local first = ns.TotemBar:GetActiveCall().name
     ns.TotemBar:CycleCall()
-    local second = ns.TotemBar:GetActiveCall().name
-    assert(first ~= second, "no ha cambiado de hechizo")
-    ns.TotemBar:CycleCall()
-    assert(ns.TotemBar:GetActiveCall().name == first, "el ciclo no vuelve al principio")
+    assert(ns.TotemBar:GetActiveCall().name ~= first, "no ha cambiado de hechizo")
+    for _ = 2, total do ns.TotemBar:CycleCall() end
+    assert(ns.TotemBar:GetActiveCall().name == first,
+        "tras " .. total .. " pasos deberia volver al primero")
 end)
 Step("los Call no se cuelan como totems del set", function()
     ns:RefreshTotemSpells()
@@ -1215,6 +1419,18 @@ Step("crear y activar un set nuevo", function()
     ns.Sets:AssignSpell(idx, 4, { name = "Grounding Totem", icon = 1 })
     assert(ns.Sets:SetActive(idx))
     assert(ns.db.learned["Grounding Totem"] == 4, "asignar a mano no ensena el elemento")
+end)
+Step("los hechizos de gestion no cuentan como totems", function()
+    ns:RefreshTotemSpells()
+    for _, e in ipairs(ns.totemSpells) do
+        assert(not e.name:find("Totemic"), "se ha colado un hechizo de gestion: " .. e.name)
+    end
+end)
+Step("pero los totems de verdad siguen ahi", function()
+    local nombres = {}
+    for _, e in ipairs(ns.totemSpells) do nombres[e.name] = true end
+    assert(nombres["Searing Totem"], "falta Searing Totem")
+    assert(nombres["Stoneskin Totem"], "falta Stoneskin Totem")
 end)
 Step("totem nuevo sin clasificar aparece en la lista", function()
     ns:RefreshTotemSpells()

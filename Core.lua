@@ -30,7 +30,7 @@ ns.DEFAULT_ORDER = { FIRE, EARTH, WATER, AIR }
 -- Defaults
 --------------------------------------------------------------------------------
 local defaults = {
-    dbVersion = 4,
+    dbVersion = 5,
     bar = {
         point = "CENTER", x = 0, y = -180,
         scale = 1.0, size = 44, spacing = 6,
@@ -41,7 +41,6 @@ local defaults = {
         showKeybindText = true,
         showSequenceButton = true,
         showCallButton = true,
-        showPurgeButton = true,
         showArrows = true,
         hideEmptySlots = false,
         order = { FIRE, EARTH, WATER, AIR },
@@ -55,6 +54,10 @@ local defaults = {
     },
     sequence = { reset = "12" },
     swing = { enabled = true, height = 12, showText = true },
+    cooldowns = { enabled = true, sound = true, screen = false, watch = {}, durations = {},
+                  soundChoice = "soft", channel = "SFX", combatOnly = true,
+                  flash = true, flashSize = 64, flashTime = 0.6 },
+    shield = { spell = nil, warn = true, warnBelow = 0, sound = true, button = true },
     weapon = {
         spell = nil, warn = true, warnBelow = 0, sound = true,
         offHand = false, button = true,
@@ -237,6 +240,18 @@ local function DeriveTotemKeyword()
     return best
 end
 
+-- "Totemic Recall" contains "totem" but is not a totem. Matching the keyword
+-- as a whole word keeps the management spells out of the list.
+local function HasWord(text, word)
+    if not text or not word then return false end
+    for piece in text:lower():gmatch("[^%s]+") do
+        piece = piece:gsub("^%p+", ""):gsub("%p+$", "")
+        if piece == word then return true end
+    end
+    return false
+end
+ns.HasWord = HasWord
+
 function ns:GetTotemKeyword()
     if totemKeyword == nil then
         totemKeyword = DeriveTotemKeyword() or "totem"
@@ -268,7 +283,7 @@ function ns:RefreshTotemSpells()
     local function consider(id)
         local name, icon = self.SpellInfo(id)
         if not name or seen[name] then return end
-        local isTotem = name:lower():find(keyword, 1, true) ~= nil
+        local isTotem = HasWord(name, keyword)
         if not isTotem and self.db.learned[name] then isTotem = true end
         if not isTotem then return end
         seen[name] = true
@@ -353,7 +368,7 @@ function ns:ScanTotems()
                 if pending and (now - pending.time) <= 2.5 then
                     local sameName = pending.name == name
                     local sameIcon = icon and pending.icon and icon == pending.icon
-                    local looksTotem = pending.name and pending.name:lower():find(self:GetTotemKeyword(), 1, true)
+                    local looksTotem = HasWord(pending.name, self:GetTotemKeyword())
                     if sameName or sameIcon or looksTotem then
                         spellName = pending.name
                         self.db.learned[spellName] = slot
@@ -468,6 +483,14 @@ ef:SetScript("OnEvent", function(self, event, ...)
             ns.db.swing.enabled = true
             ns.db.dbVersion = 4
         end
+        -- The cooldown cue goes back to the softer warning sound, and only
+        -- speaks up in combat
+        if (ns.db.dbVersion or 1) < 5 then
+            ns.db.cooldowns.soundChoice = "soft"
+            ns.db.cooldowns.channel = "SFX"
+            ns.db.cooldowns.combatOnly = true
+            ns.db.dbVersion = 5
+        end
 
         local charName = UnitName("player") or "?"
         local realm = GetRealmName() or "?"
@@ -499,6 +522,11 @@ ef:SetScript("OnEvent", function(self, event, ...)
         ns.Sets:CreateSequenceButton()
         ns.Sets:Apply()
         ns.Weapon:Enable()
+        ns.Shield:Enable()
+        if #ns.db.cooldowns.watch == 0 then
+            for _, name in ipairs(ns.Cooldown:DefaultNames()) do ns.Cooldown:Watch(name) end
+        end
+        ns.Cooldown:Rebuild()
         ns.Swing:Enable()
         ns:ApplyBindings()
         ns:ScanTotems()
@@ -518,6 +546,7 @@ ef:SetScript("OnEvent", function(self, event, ...)
         if spellName then
             state.pending = { id = spellID, name = spellName, icon = icon, time = GetTime() }
             if state.secret then ns:PlaceSyntheticTotem(spellName, icon) end
+            ns.Cooldown:OnCast(spellName)
         end
 
     elseif event == "SPELLS_CHANGED" then
@@ -529,6 +558,13 @@ ef:SetScript("OnEvent", function(self, event, ...)
             ns:RefreshTotemSpells()
             ns.Sets:EnsureDefaultSet()
             ns.Sets:Apply()
+            -- Spell data can be uncached at login, which left the watch list
+            -- empty with nothing to retry it
+            if #ns.db.cooldowns.watch == 0 then
+                for _, name in ipairs(ns.Cooldown:DefaultNames()) do ns.Cooldown:Watch(name) end
+            end
+            ns.Cooldown:Rebuild()
+            ns.TotemBar.spells, ns.TotemBar.management = nil, nil
         end)
 
     elseif event == "PLAYER_REGEN_DISABLED" then

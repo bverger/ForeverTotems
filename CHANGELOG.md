@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.2
+
+Fixed:
+
+- Totemic Recall and Totemic Projection were showing up as totems. The word
+  "totem" was being matched inside longer words, so anything "totemic" counted.
+- The little arrows above each slot drew on top of the world map. They are gone
+  entirely, and the bar now fades out while the map is open.
+
+New:
+
+- **Shield button.** Casts Lightning Shield, or Water or Earth Shield if you
+  know them, and shows the charges left rather than a clock, because charges
+  are what run out. It warns you once if you enter a fight without one.
+- **Cooldown watch.** A sound and a quick icon flash above the bar the moment a
+  watched ability comes back. Stormstrike is watched by default; `/ft watch
+  <spell>` adds or removes any other. Only speaks up in combat. If the client
+  stops reporting cooldowns mid-fight, the duration learned earlier keeps the
+  count going.
+- **Pick a spell by hovering its icon.** The totem slots, the shield and the
+  imbue all open their list on hover now. The call button does too, and offers
+  Totemic Recall and Totemic Projection alongside Call of the Elements.
+
+Removed:
+
+- The Purge button. It was a plain cast button with nothing to show, since this
+  client does not let addons read enemy auras.
+
 ## 1.0.1
 
 Swing timer, rewritten around what this client actually reports:

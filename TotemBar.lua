@@ -65,8 +65,48 @@ function TB:GetSpells()
     return self.spells or self:Scan()
 end
 
+-- Totem management spells. The two that exist are named outright, by id so the
+-- localised name comes from the client. The name check behind them is a safety
+-- net: it catches anything of the same family (a name containing the totem
+-- word without being a totem) if Forever adds more during the beta.
+local MANAGEMENT_IDS = { 36936, 108270 }   -- Totemic Recall, Totemic Projection
+
+function TB:ScanManagement()
+    local keyword = ns:GetTotemKeyword()
+    local wanted, found, seen = {}, {}, {}
+
+    for _, id in ipairs(MANAGEMENT_IDS) do
+        local name = ns.SpellInfo(id)
+        if name then wanted[name] = true end
+    end
+
+    local function consider(id)
+        local name, icon = ns.SpellInfo(id)
+        if not name or seen[name] then return end
+        local lower = name:lower()
+        local known = wanted[name]
+        local family = lower:find(keyword, 1, true) and not ns.HasWord(name, keyword)
+        if known or family then
+            seen[name] = true
+            found[#found + 1] = { name = name, icon = icon, id = id, management = true }
+        end
+    end
+
+    if ns.IterateSpellbook then ns.IterateSpellbook(consider) end
+    self.management = found
+    return found
+end
+
+-- Everything the call button can be pointed at
+function TB:GetButtonSpells()
+    local list = {}
+    for _, spell in ipairs(self:GetSpells()) do list[#list + 1] = spell end
+    for _, spell in ipairs(self.management or self:ScanManagement()) do list[#list + 1] = spell end
+    return list
+end
+
 function TB:GetActiveCall()
-    local list = self:GetSpells()
+    local list = self:GetButtonSpells()
     if #list == 0 then return nil end
     local chosen = ns.db.callSpell
     if chosen then
@@ -77,8 +117,16 @@ function TB:GetActiveCall()
     return list[1]
 end
 
+function TB:SetActiveCall(spell)
+    ns.db.callSpell = spell and spell.name or nil
+    if ns.Bar then
+        ns.Bar:ApplyAttributes()
+        ns.Bar:UpdateAll()
+    end
+end
+
 function TB:CycleCall()
-    local list = self:GetSpells()
+    local list = self:GetButtonSpells()
     if #list == 0 then return nil end
     local current, index = self:GetActiveCall(), 1
     for i, spell in ipairs(list) do
@@ -114,7 +162,7 @@ local function NumPages() return _G.NUM_MULTI_CAST_PAGES or 3 end
 
 function TB:GetPageForCall(spell)
     spell = spell or self:GetActiveCall()
-    if not spell then return 1 end
+    if not spell or spell.management then return 1 end
     if CALL_PAGE_BY_ID[spell.id] then return CALL_PAGE_BY_ID[spell.id] end
     for index, candidate in ipairs(self:GetSpells()) do
         if candidate.name == spell.name then return math.min(index, NumPages()) end

@@ -115,6 +115,29 @@ local function PlayAlertSound()
     if id then PlaySound(id, "SFX") end
 end
 
+-- A bare sound with no text, for things that do not deserve a banner. It takes
+-- its own choice and channel: a cooldown coming back should cut through, while
+-- a totem expiring should not startle you.
+function W:PlayKey(key, channel)
+    local kit = _G.SOUNDKIT
+    if not kit then return end
+    for _, choice in ipairs(ns.SOUND_CHOICES) do
+        if choice.key == key then
+            for _, name in ipairs(choice.kits) do
+                if kit[name] then
+                    PlaySound(kit[name], channel or "SFX")
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+function W:PlayCue()
+    PlayAlertSound()
+end
+
 function W:TestSound()
     local choice = self:GetSoundChoice()
     local id = choice and ResolveSound(choice.key)

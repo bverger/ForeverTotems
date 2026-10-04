@@ -16,6 +16,7 @@ IsAltKeyDown GetTotemInfo GetActionInfo GetMultiCastTotemSpells SetMultiCastSpel
 IsUsableSpell GetNumSpellTabs GetSpellTabInfo GetSpellBookItemInfo
 issecretvalue hasanysecretvalues loadstring
 GetMacroIndexByName CreateMacro EditMacro PickupMacro
+GetCursorPosition
 UnitExists UnitCanAttack UnitIsDeadOrGhost IsSpellKnown GetSpellCooldown
 CombatLogGetCurrentEventInfo GetWeaponEnchantInfo GetInventoryItemLink UnitAttackSpeed IsCurrentSpell
 """.split())
