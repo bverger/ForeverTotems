@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
 -- Forever Totems - Flyout.lua
--- A small arrow on top of each slot. Hover it and every totem of that element
--- pops up; click one to put it in the active set.
+-- Hover an icon on the bar and every totem of that element pops up; click one
+-- to put it in the active set.
 --------------------------------------------------------------------------------
 local ADDON, ns = ...
 
@@ -37,14 +37,14 @@ local function EnsurePanel()
         panel:SetBackdropColor(0, 0, 0, 0.85)
     end
 
-    -- Close once the mouse is off both the panel and the arrow that opened it.
+    -- Close once the mouse is off both the panel and the icon that opened it.
     -- IsMouseOver is the widget method; the old MouseIsOver global is gone.
     local function IsOver(frame)
         return frame and frame.IsMouseOver and frame:IsMouseOver()
     end
 
     panel:SetScript("OnUpdate", function(self, elapsed)
-        local over = IsOver(self) or IsOver(self.arrow)
+        local over = IsOver(self) or IsOver(self.anchor)
         if over then
             self.away = 0
         else
@@ -103,7 +103,7 @@ end
 
 -- Generic opener: a list of { name, icon }, who is currently chosen, and what
 -- to do when one is clicked. The totem slots and the weapon imbue both use it.
-function Flyout:OpenEntries(entries, arrow, chosenName, onSelect)
+function Flyout:OpenEntries(entries, anchor, chosenName, onSelect)
     if not entries or #entries == 0 then return false end
 
     local p = EnsurePanel()
@@ -134,56 +134,20 @@ function Flyout:OpenEntries(entries, arrow, chosenName, onSelect)
 
     p:SetSize(columns * (ICON + GAP) + 4, rows * (ICON + GAP) + 4)
     p:ClearAllPoints()
-    p:SetPoint("BOTTOM", arrow, "TOP", 0, 2)
-    p.arrow = arrow
+    p:SetPoint("BOTTOM", anchor, "TOP", 0, 6)
+    p.anchor = anchor
     p.away = 0
     p:Show()
     return true
 end
 
-function Flyout:Open(slot, arrow)
+function Flyout:Open(slot, anchor)
     local setIndex = ns.Sets:GetActiveIndex()
     local current = ns.Sets:GetSpellForSlot(slot)
-    return self:OpenEntries(self:Entries(slot), arrow, current and current.name, function(entry)
+    return self:OpenEntries(self:Entries(slot), anchor, current and current.name, function(entry)
         ns.Sets:AssignSpell(setIndex, slot, entry)
         ns:RefreshTotemSpells()
     end)
-end
-
--- An arrow for any button, not just a totem slot
-function Flyout:AttachArrowTo(button, color, getEntries, getChosen, onSelect)
-    if button.arrow then return button.arrow end
-
-    local arrow = CreateFrame("Button", nil, button)
-    arrow:SetSize(16, 10)
-    arrow:SetPoint("BOTTOM", button, "TOP", 0, 1)
-    arrow:SetFrameStrata("HIGH")
-
-    arrow.bg = arrow:CreateTexture(nil, "BACKGROUND")
-    arrow.bg:SetAllPoints()
-    arrow.bg:SetColorTexture(color[1] * 0.5, color[2] * 0.5, color[3] * 0.5, 0.9)
-
-    arrow.tex = arrow:CreateTexture(nil, "ARTWORK")
-    arrow.tex:SetTexture("Interface\\Buttons\\ActionBarFlyoutButton")
-    arrow.tex:SetTexCoord(0.625, 0.984, 0.7421875, 0.828125)
-    arrow.tex:SetPoint("CENTER")
-    arrow.tex:SetSize(16, 10)
-
-    local function open(self)
-        Flyout:OpenEntries(getEntries(), self, getChosen(), onSelect)
-    end
-
-    arrow:SetScript("OnEnter", function(self)
-        self.bg:SetColorTexture(color[1], color[2], color[3], 1)
-        open(self)
-    end)
-    arrow:SetScript("OnLeave", function(self)
-        self.bg:SetColorTexture(color[1] * 0.5, color[2] * 0.5, color[3] * 0.5, 0.9)
-    end)
-    arrow:SetScript("OnClick", open)
-
-    button.arrow = arrow
-    return arrow
 end
 
 function Flyout:Close()
@@ -191,50 +155,68 @@ function Flyout:Close()
 end
 
 --------------------------------------------------------------------------------
--- The arrow on each slot
+-- Opening on hover
+--
+-- There used to be a little arrow on top of each icon. Hovering the icon
+-- itself is less furniture on screen, and a short delay keeps the panel from
+-- popping up every time the mouse crosses the bar on its way somewhere else.
 --------------------------------------------------------------------------------
-function Flyout:AttachArrow(button, slot)
-    if button.arrow then return button.arrow end
+local HOVER_DELAY = 0.35
+local watcher = CreateFrame("Frame")
+local hovering
 
-    local arrow = CreateFrame("Button", nil, button)
-    arrow:SetSize(16, 10)
-    arrow:SetPoint("BOTTOM", button, "TOP", 0, 1)
-    arrow:SetFrameStrata("HIGH")
+local function Pending(button)
+    hovering = button and { button = button, since = GetTime() } or nil
+    watcher:SetScript("OnUpdate", hovering and function()
+        if not hovering then return end
+        local b = hovering.button
+        if not (b.IsMouseOver and b:IsMouseOver()) then
+            hovering = nil
+            watcher:SetScript("OnUpdate", nil)
+            return
+        end
+        if (GetTime() - hovering.since) >= HOVER_DELAY then
+            local open = b.flyoutOpen
+            hovering = nil
+            watcher:SetScript("OnUpdate", nil)
+            if open then open(b) end
+        end
+    end or nil)
+end
 
-    local element = ns.ELEMENTS[slot]
-    arrow.bg = arrow:CreateTexture(nil, "BACKGROUND")
-    arrow.bg:SetAllPoints()
-    arrow.bg:SetColorTexture(element.color[1] * 0.5, element.color[2] * 0.5, element.color[3] * 0.5, 0.9)
+function Flyout:AttachHover(button, getEntries, getChosen, onSelect)
+    button.flyoutOpen = function(self)
+        Flyout:OpenEntries(getEntries(), self, getChosen(), onSelect)
+    end
+    if button.flyoutHooked then return end
+    button.flyoutHooked = true
 
-    -- Blizzard's own flyout arrow; the coloured tab behind it keeps the arrow
-    -- findable even if this texture is missing on some client.
-    arrow.tex = arrow:CreateTexture(nil, "ARTWORK")
-    arrow.tex:SetTexture("Interface\\Buttons\\ActionBarFlyoutButton")
-    arrow.tex:SetTexCoord(0.625, 0.984, 0.7421875, 0.828125)
-    arrow.tex:SetPoint("CENTER")
-    arrow.tex:SetSize(16, 10)
-
-    arrow:SetScript("OnEnter", function(self)
-        self.bg:SetColorTexture(element.color[1], element.color[2], element.color[3], 1)
-        Flyout:Open(slot, self)
+    button:HookScript("OnEnter", function(self)
+        if not ns.db.bar.showArrows then return end
+        Pending(self)
     end)
-    arrow:SetScript("OnLeave", function(self)
-        self.bg:SetColorTexture(element.color[1] * 0.5, element.color[2] * 0.5, element.color[3] * 0.5, 0.9)
+    button:HookScript("OnLeave", function()
+        Pending(nil)
     end)
-    arrow:SetScript("OnClick", function(self) Flyout:Open(slot, self) end)
+end
 
-    button.arrow = arrow
-    return arrow
+function Flyout:AttachSlot(button, slot)
+    self:AttachHover(button,
+        function() return self:Entries(slot) end,
+        function()
+            local current = ns.Sets:GetSpellForSlot(slot)
+            return current and current.name
+        end,
+        function(entry)
+            ns.Sets:AssignSpell(ns.Sets:GetActiveIndex(), slot, entry)
+            ns:RefreshTotemSpells()
+        end)
 end
 
 function Flyout:UpdateArrows()
     if not (ns.Bar and ns.Bar.buttons) then return end
-    local show = ns.db.bar.showArrows
     for slot = 1, ns.MAX_SLOTS do
         local button = ns.Bar.buttons[slot]
-        if button then
-            local arrow = self:AttachArrow(button, slot)
-            arrow:SetShown(show and button:IsShown() and #self:Entries(slot) > 0)
-        end
+        if button then self:AttachSlot(button, slot) end
     end
 end

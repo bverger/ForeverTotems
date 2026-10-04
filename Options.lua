@@ -151,8 +151,8 @@ local function MakeBindButton(parent, target, label, x, y)
     local function currentKey()
         if target == "sequence" then return ns.db.binds.sequence end
         if target == "call" then return ns.db.binds.call end
-        if target == "purge" then return ns.db.binds.purge end
         if target == "weapon" then return ns.db.binds.weapon end
+        if target == "shield" then return ns.db.binds.shield end
         return ns.db.binds.slots[target]
     end
 
@@ -477,7 +477,7 @@ local function BuildWindow()
         function() return db.bar.hideEmptySlots end,
         function(v) db.bar.hideEmptySlots = v; ns.Bar:Layout(); ns.Bar:UpdateAll() end)
     y = y - 24
-    MakeCheck(content, "Arrow on each slot to swap totems", x, y,
+    MakeCheck(content, "Hover an icon to pick a different one", x, y,
         function() return db.bar.showArrows end,
         function(v) db.bar.showArrows = v; ns.Flyout:UpdateArrows() end)
     y = y - 24
@@ -492,6 +492,37 @@ local function BuildWindow()
         function() return db.swing.enabled end,
         function(v) db.swing.enabled = v; ns.Bar:UpdateSwing() end)
     y = y - 24
+    MakeCheck(content, "Sound when a watched cooldown comes back", x, y,
+        function() return db.cooldowns.enabled end,
+        function(v) db.cooldowns.enabled = v end)
+    local cdSound = MakeButton(content, "", x + 300, y + 4, 150, function(self)
+        local choice = ns.Cooldown:CycleSound()
+        self:SetText("Cue: " .. (choice and choice.label or "none"))
+    end)
+    refreshers[#refreshers + 1] = function()
+        local label = ns.db.cooldowns.soundChoice or "?"
+        for _, c in ipairs(ns.SOUND_CHOICES) do
+            if c.key == ns.db.cooldowns.soundChoice then label = c.label end
+        end
+        cdSound:SetText("Cue: " .. label)
+    end
+    y = y - 24
+    MakeCheck(content, "Only while you are in combat", x, y,
+        function() return db.cooldowns.combatOnly end,
+        function(v) db.cooldowns.combatOnly = v end)
+    y = y - 24
+    MakeCheck(content, "Flash the icon above the bar as well", x, y,
+        function() return db.cooldowns.flash end,
+        function(v) db.cooldowns.flash = v end)
+    y = y - 24
+    MakeCheck(content, "Shield button on the bar", x, y,
+        function() return db.shield.button end,
+        function(v) db.shield.button = v; ns.Bar:Layout() end)
+    y = y - 24
+    MakeCheck(content, "Warn if you enter combat with no shield", x, y,
+        function() return db.shield.warn end,
+        function(v) db.shield.warn = v end)
+    y = y - 24
     MakeCheck(content, "Weapon imbue button on the bar", x, y,
         function() return db.weapon.button end,
         function(v) db.weapon.button = v; ns.Bar:Layout() end)
@@ -503,10 +534,6 @@ local function BuildWindow()
     MakeCheck(content, "Imbue the off hand instead", x, y,
         function() return db.weapon.offHand end,
         function(v) db.weapon.offHand = v; ns.Bar:ApplyAttributes() end)
-    y = y - 24
-    MakeCheck(content, "Purge button on the bar", x, y,
-        function() return db.bar.showPurgeButton end,
-        function(v) db.bar.showPurgeButton = v; ns.Bar:Layout() end)
     y = y - 24
     MakeCheck(content, "Show call-of-the-elements button", x, y,
         function() return db.bar.showCallButton end,
@@ -593,10 +620,11 @@ local function BuildWindow()
     MakeBindButton(content, "sequence", "Whole set", rx + 70, by)
     by = by - 26
     MakeBindButton(content, "call", "Call spell", rx + 70, by)
-    by = by - 26
-    MakeBindButton(content, "purge", "Purge", rx + 70, by)
+
     by = by - 26
     MakeBindButton(content, "weapon", "Weapon imbue", rx + 70, by)
+    by = by - 26
+    MakeBindButton(content, "shield", "Shield", rx + 70, by)
 
     by = by - 34
 
@@ -805,6 +833,26 @@ local function HandleSlash(input)
         ns:ShowText("Weapon imbue diagnostics", ns.Weapon:Report())
     elseif cmd == "check" then
         ns:ShowText("Bar diagnostics", ns.Bar:Diagnose())
+    elseif cmd == "cdsound" then
+        local choice = ns.Cooldown:CycleSound()
+        ns:Print("Cooldown cue: " .. (choice and choice.label or "none"))
+    elseif cmd == "cdloud" then
+        ns:Print("Cooldown cue channel: " .. ns.Cooldown:ToggleChannel())
+    elseif cmd == "cdtest" then
+        ns:ShowText("Cooldown watch", ns.Cooldown:Report())
+    elseif cmd == "watch" then
+        if rest == "" then
+            ns:Print("Watching for cooldowns coming back:")
+            for _, name in ipairs(ns.db.cooldowns.watch) do
+                ns:Print("  " .. name .. (ns.Cooldown:Watched()[name] and "" or "   (not in your spellbook)"))
+            end
+            ns:Print("Use /ft watch <spell name> to add or remove one.")
+        elseif ns.Cooldown:Unwatch(rest) then
+            ns:Print("No longer watching " .. rest)
+        elseif ns.Cooldown:Watch(rest) then
+            ns:Print("Watching " .. rest .. (ns.Cooldown:Watched()[rest] and "" or
+                "   (not found in your spellbook, check the spelling)"))
+        end
     elseif cmd == "sync" then
         local written, skipped, reason = ns.TotemBar:SyncActiveSet()
         if reason then
@@ -844,7 +892,7 @@ local function HandleSlash(input)
         ns.db.debug = not ns.db.debug
         ns:Print("Debug: " .. (ns.db.debug and "ON" or "OFF"))
     else
-        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n>, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
+        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n>, watch <spell>, cdtest, cdsound, cdloud, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
     end
 end
 

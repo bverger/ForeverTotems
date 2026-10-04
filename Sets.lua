@@ -278,14 +278,14 @@ function ns:ApplyBindings()
             SetOverrideBindingClick(owner, true, seqKey, "ForeverTotemsSequenceButton", "LeftButton")
         end
 
+        local shieldKey = ns.db.binds.shield
+        if shieldKey and shieldKey ~= "" and _G.ForeverTotemsShieldButton then
+            SetOverrideBindingClick(owner, true, shieldKey, "ForeverTotemsShieldButton", "LeftButton")
+        end
+
         local weaponKey = ns.db.binds.weapon
         if weaponKey and weaponKey ~= "" and _G.ForeverTotemsWeaponButton then
             SetOverrideBindingClick(owner, true, weaponKey, "ForeverTotemsWeaponButton", "LeftButton")
-        end
-
-        local purgeKey = ns.db.binds.purge
-        if purgeKey and purgeKey ~= "" and _G.ForeverTotemsPurgeButton then
-            SetOverrideBindingClick(owner, true, purgeKey, "ForeverTotemsPurgeButton", "LeftButton")
         end
 
         local callKey = ns.db.binds.call
@@ -303,8 +303,8 @@ function ns:SetBinding(target, key)
         -- a key cannot be bound in two places at once
         if ns.db.binds.sequence == key then ns.db.binds.sequence = nil end
         if ns.db.binds.call == key then ns.db.binds.call = nil end
-        if ns.db.binds.purge == key then ns.db.binds.purge = nil end
         if ns.db.binds.weapon == key then ns.db.binds.weapon = nil end
+        if ns.db.binds.shield == key then ns.db.binds.shield = nil end
         for slot = 1, MAX_SLOTS do
             if ns.db.binds.slots[slot] == key then ns.db.binds.slots[slot] = nil end
         end
@@ -313,10 +313,10 @@ function ns:SetBinding(target, key)
         ns.db.binds.sequence = key
     elseif target == "call" then
         ns.db.binds.call = key
-    elseif target == "purge" then
-        ns.db.binds.purge = key
     elseif target == "weapon" then
         ns.db.binds.weapon = key
+    elseif target == "shield" then
+        ns.db.binds.shield = key
     else
         ns.db.binds.slots[target] = key
     end

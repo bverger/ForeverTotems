@@ -19,26 +19,6 @@ local function RegisterClicks(button)
     button:RegisterForClicks("AnyUp", "AnyDown")
 end
 
--- Purge, purely as a cast button. No aura reading is involved: this client
--- does not let addons see enemy auras in combat, so there is nothing to light
--- up, but casting it from here works fine.
-local PURGE_IDS = { 8012, 370 }
-local purgeSpell
-
-local function GetPurgeSpell()
-    if purgeSpell ~= nil then return purgeSpell or nil end
-    for _, id in ipairs(PURGE_IDS) do
-        local name, icon = ns.SpellInfo(id)
-        if name and (not IsSpellKnown or IsSpellKnown(id)) then
-            purgeSpell = { id = id, name = name, icon = icon }
-            return purgeSpell
-        end
-    end
-    purgeSpell = false
-    return nil
-end
-ns.GetPurgeSpell = GetPurgeSpell
-
 local function SetEdgeColor(button, r, g, b, a)
     for _, edge in ipairs(button.edges) do
         edge:SetColorTexture(r, g, b, a)
@@ -275,37 +255,18 @@ function Bar:Create()
         local spell = ns.TotemBar:GetActiveCall()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(spell and spell.name or "No call spell known", 1, 1, 1)
-        GameTooltip:AddLine("Places the totems saved in the game's totem bar.", 0.8, 0.8, 0.8, true)
-        if #ns.TotemBar:GetSpells() > 1 then
-            GameTooltip:AddLine("/ft call switches to the next one.", 0.5, 0.7, 1)
+        if spell and spell.management then
+            GameTooltip:AddLine("A totem management spell.", 0.8, 0.8, 0.8, true)
+        else
+            GameTooltip:AddLine("Places the totems saved in the game's totem bar.", 0.8, 0.8, 0.8, true)
+        end
+        if #ns.TotemBar:GetButtonSpells() > 1 then
+            GameTooltip:AddLine("Hover to pick another, or /ft call.", 0.5, 0.7, 1)
         end
         GameTooltip:Show()
     end)
     call:SetScript("OnLeave", ButtonOnLeave)
     self.callButton = call
-
-    local purge = CreateFrame("Button", "ForeverTotemsPurgeButton", f, "SecureActionButtonTemplate")
-    RegisterClicks(purge)
-    purge.icon = purge:CreateTexture(nil, "ARTWORK")
-    purge.icon:SetPoint("TOPLEFT", 2, -2)
-    purge.icon:SetPoint("BOTTOMRIGHT", -2, 2)
-    purge.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    purge.bg = purge:CreateTexture(nil, "BACKGROUND")
-    purge.bg:SetAllPoints()
-    purge.bg:SetColorTexture(0, 0, 0, 1)
-    purge.keybind = purge:CreateFontString(nil, "OVERLAY")
-    purge.keybind:SetFont(FONT, 10, "OUTLINE")
-    purge.keybind:SetPoint("TOPRIGHT", -2, -3)
-    purge.keybind:SetTextColor(0.8, 0.8, 0.8)
-    purge:SetScript("OnEnter", function(self)
-        local spell = GetPurgeSpell()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(spell and spell.name or "Purge", 1, 1, 1)
-        GameTooltip:AddLine("Removes a magic buff from your target.", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    purge:SetScript("OnLeave", ButtonOnLeave)
-    self.purgeButton = purge
 
     -- Weapon imbue: icon, time left, and its own flyout to pick which one
     local weapon = CreateFrame("Button", "ForeverTotemsWeaponButton", f, "SecureActionButtonTemplate")
@@ -381,6 +342,83 @@ function Bar:Create()
     swing:Hide()
     self.swingBar = swing
 
+    -- Shield button: charges front and centre, since that is what runs out
+    local shield = CreateFrame("Button", "ForeverTotemsShieldButton", f, "SecureActionButtonTemplate")
+    RegisterClicks(shield)
+    shield.icon = shield:CreateTexture(nil, "ARTWORK")
+    shield.icon:SetPoint("TOPLEFT", 2, -2)
+    shield.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+    shield.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    shield.bg = shield:CreateTexture(nil, "BACKGROUND")
+    shield.bg:SetAllPoints()
+    shield.bg:SetColorTexture(0, 0, 0, 1)
+    shield.glow = shield:CreateTexture(nil, "OVERLAY")
+    shield.glow:SetAllPoints()
+    shield.glow:SetColorTexture(0.3, 0.6, 1, 0)
+    shield.edges = {}
+    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+        local edge = shield:CreateTexture(nil, "BORDER")
+        if side == "TOP" or side == "BOTTOM" then
+            edge:SetHeight(2)
+            edge:SetPoint(side .. "LEFT")
+            edge:SetPoint(side .. "RIGHT")
+        else
+            edge:SetWidth(2)
+            edge:SetPoint("TOP" .. side)
+            edge:SetPoint("BOTTOM" .. side)
+        end
+        shield.edges[#shield.edges + 1] = edge
+    end
+    shield.timer = shield:CreateFontString(nil, "OVERLAY")
+    shield.timer:SetFont(FONT, 14, "OUTLINE")
+    shield.timer:SetPoint("BOTTOM", 0, 2)
+    shield.keybind = shield:CreateFontString(nil, "OVERLAY")
+    shield.keybind:SetFont(FONT, 10, "OUTLINE")
+    shield.keybind:SetPoint("TOPRIGHT", -2, -3)
+    shield.keybind:SetTextColor(0.8, 0.8, 0.8)
+    shield:SetScript("OnEnter", function(self)
+        local spell = ns.Shield:GetChosen()
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(spell and spell.name or "Shield", 1, 1, 1)
+        if ns.Shield:IsBlocked() then
+            GameTooltip:AddLine("The client is not reporting your buffs right now.", 0.9, 0.6, 0.3, true)
+        elseif ns.Shield:IsUp() then
+            GameTooltip:AddLine(("%d charges left"):format(ns.Shield:Charges()), 0.4, 0.8, 0.4)
+        else
+            GameTooltip:AddLine("No shield up.", 1, 0.4, 0.4)
+        end
+        GameTooltip:Show()
+    end)
+    shield:SetScript("OnLeave", ButtonOnLeave)
+    self.shieldButton = shield
+
+    -- Proc flash: the icon pops above the bar and shrinks away. Hand animated
+    -- rather than with an AnimationGroup, which is one API less to depend on.
+    local flash = CreateFrame("Frame", "ForeverTotemsFlash", UIParent)
+    flash:SetPoint("BOTTOM", f, "TOP", 0, 14)
+    flash:SetFrameStrata("HIGH")
+    flash:Hide()
+    flash.icon = flash:CreateTexture(nil, "ARTWORK")
+    flash.icon:SetAllPoints()
+    flash.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    flash.glow = flash:CreateTexture(nil, "BACKGROUND")
+    flash.glow:SetPoint("TOPLEFT", -6, 6)
+    flash.glow:SetPoint("BOTTOMRIGHT", 6, -6)
+    flash.glow:SetColorTexture(1, 0.9, 0.4, 0.35)
+    flash:SetScript("OnUpdate", function(self, elapsed)
+        self.left = (self.left or 0) - elapsed
+        local total = ns.db.cooldowns.flashTime or 0.6
+        if self.left <= 0 then
+            self:Hide()
+            return
+        end
+        local progress = 1 - (self.left / total)      -- 0 at the start, 1 at the end
+        local size = ns.db.cooldowns.flashSize or 64
+        self:SetAlpha(1 - progress)
+        self:SetSize(size * (1.5 - 0.5 * progress), size * (1.5 - 0.5 * progress))
+    end)
+    self.flash = flash
+
     self.dragOverlay = CreateDragOverlay(f)
 
     f:SetScript("OnUpdate", function(self, elapsed)
@@ -390,7 +428,9 @@ function Bar:Create()
         self.elapsed = 0
         Bar:UpdateTimers()
         if ns.Warnings then ns.Warnings:Update(delta) end
+        Bar:UpdateMapHiding()
         if ns.Swing then ns.Swing:Update() end
+        if ns.Cooldown then ns.Cooldown:Update() end
         Bar:UpdateSwing()
         if ns.Weapon then
             Bar.weaponAccum = (Bar.weaponAccum or 0) + delta
@@ -408,7 +448,6 @@ function Bar:Create()
     end)
     ns:On("SET_CHANGED", function() Bar:UpdateAll() end)
     ns:On("SPELLS_REFRESHED", function()
-        purgeSpell = nil          -- re-resolve: you may have just learned it
         Bar:Layout()
         Bar:ApplyAttributes()
         Bar:UpdateAll()
@@ -458,29 +497,33 @@ function Bar:Layout()
     else
         self.seqButton:Hide()
     end
+    if ns.db.shield.button and #ns.Shield:GetSpells() > 0 then
+        widgets[#widgets + 1] = self.shieldButton
+        self.shieldButton:Show()
+        ns.Flyout:AttachHover(self.shieldButton,
+            function() return ns.Shield:GetSpells() end,
+            function() local s = ns.Shield:GetChosen() return s and s.name end,
+            function(entry) ns.Shield:SetChosen(entry) end)
+    else
+        self.shieldButton:Hide()
+    end
     if ns.db.weapon.button and #ns.Weapon:GetSpells() > 0 then
         widgets[#widgets + 1] = self.weaponButton
         self.weaponButton:Show()
-        ns.Flyout:AttachArrowTo(self.weaponButton, { 1, 0.55, 0.2 },
+        ns.Flyout:AttachHover(self.weaponButton,
             function() return ns.Weapon:GetSpells() end,
             function() local s = ns.Weapon:GetChosen() return s and s.name end,
             function(entry) ns.Weapon:SetChosen(entry) end)
-        if self.weaponButton.arrow then
-            self.weaponButton.arrow:SetShown(ns.db.bar.showArrows)
-        end
     else
         self.weaponButton:Hide()
-        if self.weaponButton.arrow then self.weaponButton.arrow:Hide() end
-    end
-    if cfg.showPurgeButton and GetPurgeSpell() then
-        widgets[#widgets + 1] = self.purgeButton
-        self.purgeButton:Show()
-    else
-        self.purgeButton:Hide()
     end
     if cfg.showCallButton and ns.TotemBar:GetActiveCall() then
         widgets[#widgets + 1] = self.callButton
         self.callButton:Show()
+        ns.Flyout:AttachHover(self.callButton,
+            function() return ns.TotemBar:GetButtonSpells() end,
+            function() local s = ns.TotemBar:GetActiveCall() return s and s.name end,
+            function(entry) ns.TotemBar:SetActiveCall(entry) end)
     else
         self.callButton:Hide()
     end
@@ -560,16 +603,16 @@ function Bar:ApplyAttributes()
         self.seqButton:SetAttribute("macrotext", macro or "")
     end
 
+    local shieldMacro = ns.Shield:GetMacro()
+    if self.shieldButton then
+        self.shieldButton:SetAttribute("type", shieldMacro and "macro" or nil)
+        self.shieldButton:SetAttribute("macrotext", shieldMacro or "")
+    end
+
     local weaponMacro = ns.Weapon:GetMacro()
     if self.weaponButton then
         self.weaponButton:SetAttribute("type", weaponMacro and "macro" or nil)
         self.weaponButton:SetAttribute("macrotext", weaponMacro or "")
-    end
-
-    local purge = GetPurgeSpell()
-    if self.purgeButton then
-        self.purgeButton:SetAttribute("type", purge and "macro" or nil)
-        self.purgeButton:SetAttribute("macrotext", purge and ("/cast " .. purge.name) or "")
     end
 
     local call = ns.TotemBar:GetActiveCall()
@@ -655,6 +698,66 @@ function Bar:UpdateSwing()
     bar:SetStatusBarColor(0.9, 0.7, 0.2)
 end
 
+-- Pop an icon above the bar for a moment
+function Bar:FlashIcon(texture)
+    local flash = self.flash
+    if not flash or not ns.db.cooldowns.flash then return end
+    flash.icon:SetTexture(texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+    flash.left = ns.db.cooldowns.flashTime or 0.6
+    flash:SetAlpha(1)
+    flash:Show()
+end
+
+-- The world map covers the bar, but anything the addon draws above its own
+-- buttons would still show through. Fading out while the map is open settles
+-- it for good, and alpha is safe to change in combat where hiding is not.
+function Bar:UpdateMapHiding()
+    local f = self.frame
+    if not f then return end
+
+    local mapOpen = _G.WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
+    local wanted = mapOpen and 0 or 1
+    if self.mapAlpha ~= wanted then
+        self.mapAlpha = wanted
+        f:SetAlpha(wanted)
+        if self.flash then self.flash:SetAlpha(wanted) end
+    end
+end
+
+function Bar:UpdateShieldButton()
+    local b = self.shieldButton
+    if not b then return end
+
+    local spell = ns.Shield:GetChosen()
+    b.icon:SetTexture((spell and spell.icon) or "Interface\\Icons\\Spell_Nature_LightningShield")
+
+    local key = ns.db.binds.shield
+    b.keybind:SetText(ns.db.bar.showKeybindText and key
+        and key:gsub("SHIFT%-", "s"):gsub("CTRL%-", "c"):gsub("ALT%-", "a") or "")
+
+    if ns.Shield:IsUp() then
+        local charges = ns.Shield:Charges()
+        b.icon:SetDesaturated(false)
+        b.icon:SetAlpha(1)
+        b.glow:SetAlpha(0)
+        -- The charge count is the number that matters, not the clock
+        b.timer:SetText(charges > 0 and tostring(charges) or "")
+        if charges > 0 and charges <= 1 then
+            b.timer:SetTextColor(1, 0.45, 0.2)
+            SetEdgeColor(b, 1, 0.45, 0.2, 1)
+        else
+            b.timer:SetTextColor(0.45, 0.8, 1)
+            SetEdgeColor(b, 0.3, 0.6, 1, 1)
+        end
+    else
+        b.icon:SetDesaturated(true)
+        b.icon:SetAlpha(0.45)
+        b.timer:SetText("")
+        b.glow:SetAlpha(ns.Shield:IsBlocked() and 0 or 0.25)
+        SetEdgeColor(b, 0.15, 0.3, 0.5, 0.9)
+    end
+end
+
 function Bar:UpdateWeaponButton()
     local b = self.weaponButton
     if not b then return end
@@ -721,13 +824,7 @@ function Bar:UpdateAll()
         self.callButton.icon:SetTexture((call and call.icon) or "Interface\\Icons\\Spell_Nature_EarthBindTotem")
     end
     self:UpdateWeaponButton()
-    if self.purgeButton then
-        local spell = GetPurgeSpell()
-        self.purgeButton.icon:SetTexture((spell and spell.icon) or "Interface\\Icons\\Spell_Nature_Purge")
-        local key = ns.db.binds.purge
-        self.purgeButton.keybind:SetText(ns.db.bar.showKeybindText and key
-            and key:gsub("SHIFT%-", "s"):gsub("CTRL%-", "c"):gsub("ALT%-", "a") or "")
-    end
+    self:UpdateShieldButton()
     self:UpdateKeybindText()
 end
 
