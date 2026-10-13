@@ -55,6 +55,10 @@ ns.SOUND_CHOICES = {
     { key = "whisper", label = "Whisper",        kits = { "TELL_MESSAGE" } },
     { key = "ready",   label = "Ready check",   kits = { "READY_CHECK" } },
     { key = "raid",   label = "Raid warning", kits = { "RAID_WARNING" } },
+    { key = "pop",     label = "Pop",            kits = { "IG_PLAYER_INVITE", "U_CHAT_SCROLL_BUTTON" } },
+    { key = "click",   label = "Click",          kits = { "IG_MAINMENU_OPTION_CHECKBOX_ON", "U_CHAT_SCROLL_BUTTON" } },
+    { key = "alarm",   label = "Alarm",          kits = { "ALARM_CLOCK_WARNING_3", "ALARM_CLOCK_WARNING_2" } },
+    { key = "bell",    label = "Bell",           kits = { "AUCTION_WINDOW_OPEN", "IG_MAINMENU_OPEN" } },
 }
 
 local function ResolveSound(key)

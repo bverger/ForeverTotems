@@ -284,6 +284,11 @@ function Weapon:Remaining()
     return math.max(0, state.expires - GetTime())
 end
 
+-- Which imbue the weapon is carrying, as the client names it
+function Weapon:AppliedName()
+    return state.appliedName
+end
+
 function Weapon:IsBlocked()
     return state.blocked and true or false
 end

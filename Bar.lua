@@ -407,13 +407,13 @@ function Bar:Create()
     flash.glow:SetColorTexture(1, 0.9, 0.4, 0.35)
     flash:SetScript("OnUpdate", function(self, elapsed)
         self.left = (self.left or 0) - elapsed
-        local total = ns.db.cooldowns.flashTime or 0.6
+        local total = self.total or ns.db.cooldowns.flashTime or 0.6
         if self.left <= 0 then
             self:Hide()
             return
         end
         local progress = 1 - (self.left / total)      -- 0 at the start, 1 at the end
-        local size = ns.db.cooldowns.flashSize or 64
+        local size = self.size or ns.db.cooldowns.flashSize or 64
         self:SetAlpha(1 - progress)
         self:SetSize(size * (1.5 - 0.5 * progress), size * (1.5 - 0.5 * progress))
     end)
@@ -699,11 +699,23 @@ function Bar:UpdateSwing()
 end
 
 -- Pop an icon above the bar for a moment
-function Bar:FlashIcon(texture)
+-- options: gate (what switches it on, the cooldown setting by default), time,
+-- size and the colour of the glow behind the icon
+function Bar:FlashIcon(texture, options)
     local flash = self.flash
-    if not flash or not ns.db.cooldowns.flash then return end
+    if not flash then return end
+    options = options or {}
+    local gate = options.gate
+    if gate == nil then gate = ns.db.cooldowns.flash end
+    if not gate then return end
+
     flash.icon:SetTexture(texture or "Interface\\Icons\\INV_Misc_QuestionMark")
-    flash.left = ns.db.cooldowns.flashTime or 0.6
+    flash.total = options.time or ns.db.cooldowns.flashTime or 0.6
+    flash.size = options.size or ns.db.cooldowns.flashSize or 64
+    local c = options.color
+    flash.glow:SetColorTexture(c and c[1] or 1, c and c[2] or 0.9,
+        c and c[3] or 0.4, c and c[4] or 0.35)
+    flash.left = flash.total
     flash:SetAlpha(1)
     flash:Show()
 end

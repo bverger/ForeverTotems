@@ -30,7 +30,7 @@ ns.DEFAULT_ORDER = { FIRE, EARTH, WATER, AIR }
 -- Defaults
 --------------------------------------------------------------------------------
 local defaults = {
-    dbVersion = 5,
+    dbVersion = 7,
     bar = {
         point = "CENTER", x = 0, y = -180,
         scale = 1.0, size = 44, spacing = 6,
@@ -56,7 +56,16 @@ local defaults = {
     swing = { enabled = true, height = 12, showText = true },
     cooldowns = { enabled = true, sound = true, screen = false, watch = {}, durations = {},
                   soundChoice = "soft", channel = "SFX", combatOnly = true,
-                  flash = true, flashSize = 64, flashTime = 0.6 },
+                  flash = true, flashSize = 64, flashTime = 0.6,
+                  -- [spell] = the cooldown resets when you dodge or parry
+                  resets = {}, resetsManual = {} },
+    -- The proc is the icon flashing, nothing else. Every cue this client has to
+    -- offer is a user interface blip, and one of those going off several times
+    -- a fight is worse than no cue at all, so the sound is there to be turned
+    -- on by anyone who wants it rather than on by default.
+    windfury = { enabled = true, sound = false, screen = false, melee = true,
+                 soundChoice = "pop", channel = "SFX",
+                 flash = true, flashSize = 72, flashTime = 0.5 },
     shield = { spell = nil, warn = true, warnBelow = 0, sound = true, button = true },
     weapon = {
         spell = nil, warn = true, warnBelow = 0, sound = true,
@@ -492,6 +501,20 @@ ef:SetScript("OnEvent", function(self, event, ...)
             ns.db.dbVersion = 5
         end
 
+        -- The Windfury cue was the whisper sound, which is the one sound an
+        -- alert must not be: you look at the chat frame instead of the fight
+        if (ns.db.dbVersion or 1) < 6 then
+            if ns.db.windfury.soundChoice == "whisper" then
+                ns.db.windfury.soundChoice = "pop"
+            end
+            ns.db.dbVersion = 6
+        end
+        -- None of them were any good. The flash says it well enough on its own.
+        if (ns.db.dbVersion or 1) < 7 then
+            ns.db.windfury.sound = false
+            ns.db.dbVersion = 7
+        end
+
         local charName = UnitName("player") or "?"
         local realm = GetRealmName() or "?"
         ns.charKey = charName .. "-" .. realm
@@ -522,11 +545,13 @@ ef:SetScript("OnEvent", function(self, event, ...)
         ns.Sets:CreateSequenceButton()
         ns.Sets:Apply()
         ns.Weapon:Enable()
+        ns.Windfury:Enable()
         ns.Shield:Enable()
         if #ns.db.cooldowns.watch == 0 then
             for _, name in ipairs(ns.Cooldown:DefaultNames()) do ns.Cooldown:Watch(name) end
         end
         ns.Cooldown:Rebuild()
+        ns.Cooldown:Enable()
         ns.Swing:Enable()
         ns:ApplyBindings()
         ns:ScanTotems()
@@ -543,10 +568,12 @@ ef:SetScript("OnEvent", function(self, event, ...)
         local unit, _, spellID = ...
         if unit ~= "player" or not spellID then return end
         local spellName, icon = ns.SpellInfo(spellID)
+        ns.Windfury:SeeCast(spellID, spellName)
         if spellName then
             state.pending = { id = spellID, name = spellName, icon = icon, time = GetTime() }
             if state.secret then ns:PlaceSyntheticTotem(spellName, icon) end
             ns.Cooldown:OnCast(spellName)
+            ns.Windfury:OnCast(spellName, spellID, icon)
         end
 
     elseif event == "SPELLS_CHANGED" then
@@ -564,6 +591,8 @@ ef:SetScript("OnEvent", function(self, event, ...)
                 for _, name in ipairs(ns.Cooldown:DefaultNames()) do ns.Cooldown:Watch(name) end
             end
             ns.Cooldown:Rebuild()
+            ns.Cooldown:ScanTalents()
+            ns.Windfury:Forget()
             ns.TotemBar.spells, ns.TotemBar.management = nil, nil
         end)
 

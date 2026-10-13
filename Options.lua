@@ -515,6 +515,44 @@ local function BuildWindow()
         function() return db.cooldowns.flash end,
         function(v) db.cooldowns.flash = v end)
     y = y - 24
+    MakeCheck(content, "Flash the icon when Windfury goes off", x, y,
+        function() return db.windfury.enabled end,
+        function(v) db.windfury.enabled = v end)
+    y = y - 24
+    MakeCheck(content, "And a sound as well (off: they all sound like the chat)", x, y,
+        function() return db.windfury.sound end,
+        function(v) db.windfury.sound = v end)
+    local wfSound = MakeButton(content, "", x + 300, y + 4, 150, function(self)
+        local choice = ns.Windfury:CycleSound()
+        self:SetText("Cue: " .. (choice and choice.label or "none"))
+    end)
+    refreshers[#refreshers + 1] = function()
+        local label = ns.db.windfury.soundChoice or "?"
+        for _, c in ipairs(ns.SOUND_CHOICES) do
+            if c.key == ns.db.windfury.soundChoice then label = c.label end
+        end
+        wfSound:SetText("Cue: " .. label)
+    end
+    y = y - 24
+    MakeCheck(content, "Spot Windfury by its extra attacks (this client says nothing else)", x, y,
+        function() return db.windfury.melee end,
+        function(v) db.windfury.melee = v end)
+    y = y - 24
+    MakeCheck(content, "Flash the Windfury icon too", x, y,
+        function() return db.windfury.flash end,
+        function(v) db.windfury.flash = v end)
+    y = y - 24
+    MakeCheck(content, "Dodge and parry give it back (Improved Stormstrike)", x, y,
+        function()
+            for _, name in ipairs(db.cooldowns.watch) do
+                if ns.Cooldown:ResetsOnAvoid(name) then return true end
+            end
+            return false
+        end,
+        function(v)
+            for _, name in ipairs(db.cooldowns.watch) do ns.Cooldown:SetReset(name, v) end
+        end)
+    y = y - 24
     MakeCheck(content, "Shield button on the bar", x, y,
         function() return db.shield.button end,
         function(v) db.shield.button = v; ns.Bar:Layout() end)
@@ -838,6 +876,30 @@ local function HandleSlash(input)
         ns:Print("Cooldown cue: " .. (choice and choice.label or "none"))
     elseif cmd == "cdloud" then
         ns:Print("Cooldown cue channel: " .. ns.Cooldown:ToggleChannel())
+    elseif cmd == "wf" or cmd == "windfury" then
+        ns:ShowText("Windfury procs", ns.Windfury:Report())
+    elseif cmd == "wfprobe" then
+        local on = ns.Windfury:ToggleProbe()
+        if on then
+            ns:Print("Windfury probe ON. Melee something for a few seconds, then /ft wfprobe again.")
+        else
+            ns:ShowText("Windfury probe", ns.Windfury:ProbeReport())
+        end
+    elseif cmd == "wfsound" then
+        local choice = ns.Windfury:CycleSound()
+        ns:Print("Windfury cue: " .. (choice and choice.label or "none"))
+    elseif cmd == "wfloud" then
+        ns:Print("Windfury cue channel: " .. ns.Windfury:ToggleChannel())
+    elseif cmd == "cdreset" then
+        local name = (rest ~= "" and rest) or ns.db.cooldowns.watch[1]
+        if not name then
+            ns:Print("Nothing on the watch list. Use /ft watch <spell name> first.")
+        else
+            local on = ns.Cooldown:SetReset(name, not ns.Cooldown:ResetsOnAvoid(name))
+            ns:Print(("%s: %s"):format(name, on
+                and "a dodge or a parry gives it back (Improved Stormstrike)"
+                or "the cooldown just runs down"))
+        end
     elseif cmd == "cdtest" then
         ns:ShowText("Cooldown watch", ns.Cooldown:Report())
     elseif cmd == "watch" then
@@ -892,7 +954,7 @@ local function HandleSlash(input)
         ns.db.debug = not ns.db.debug
         ns:Print("Debug: " .. (ns.db.debug and "ON" or "OFF"))
     else
-        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n>, watch <spell>, cdtest, cdsound, cdloud, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
+        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n>, watch <spell>, cdtest, cdreset, cdsound, cdloud, wf, wfprobe, wfsound, wfloud, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
     end
 end
 
