@@ -31,6 +31,7 @@ BackdropTemplateMixin ChatFontNormal GameFontHighlight
 OPTIONAL = set("""
 GetMouseFocus GetMouseFoci InterfaceOptions_AddCategory
 InterfaceOptionsFrame_OpenToCategory DestroyTotem
+GetNumTalentTabs GetNumTalents GetTalentInfo
 """.split())
 
 LUA_KEYWORDS = set("""

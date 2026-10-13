@@ -21,7 +21,7 @@ SetMinMaxValues SetValueStep SetObeyStepOnDrag SetOrientation SetThumbTexture
 IsMouseClickEnabled SetMouseClickEnabled
 HighlightText SetFocus ClearFocus SetMultiLine SetAutoFocus SetFontObject
 SetMaxLetters Insert SetScrollChild SetJustifyV EnableMouseWheel SetIndentedWordWrap
-SetOwner AddLine
+SetOwner AddLine SetTalent
 CreateAnimationGroup CreateAnimation SetDuration SetOrder SetFromAlpha SetToAlpha
 Play Stop
 ]]):gmatch("%S+") do WIDGET_API[m] = true end
@@ -79,6 +79,7 @@ FrameMethods.RegisterForClicks = function(self, ...) self.__clicks = { ... } end
 FrameMethods.RegisterEvent = function(self, e) self.__events[e] = true end
 FrameMethods.IsEventRegistered = function(self, e) return self.__events[e] == true end
 FrameMethods.UnregisterEvent = function(self, e) self.__events[e] = nil end
+FrameMethods.UnregisterAllEvents = function(self) self.__events = {} end
 FrameMethods.SetHeight = function(self, h) self.__height = h end
 FrameMethods.SetAllPoints = function(self) self.__allPoints = true end
 FrameMethods.SetColorTexture = function(self, r, g, b, a) self.__color = { r, g, b, a } end
@@ -166,9 +167,35 @@ _G.__autoAttack = false
 function IsCurrentSpell(id) return id == 6603 and _G.__autoAttack or false end
 _G.__tooltipLines = { [16] = {}, [17] = {} }
 FrameMethods.ClearLines = function(self) end
-FrameMethods.SetInventoryItem = function(self, unit, slot) self.__slot = slot end
-FrameMethods.NumLines = function(self) return #(_G.__tooltipLines[self.__slot or 16] or {}) end
+FrameMethods.SetInventoryItem = function(self, unit, slot)
+    self.__slot, self.__lines = slot, nil
+end
+FrameMethods.NumLines = function(self)
+    if self.__lines then return #self.__lines end
+    return #(_G.__tooltipLines[self.__slot or 16] or {})
+end
 FrameMethods.GetText = function(self) return self.__text end
+
+-- Arbol de talentos. Con la forma clasica: GetTalentInfo devuelve nombre y rango.
+_G.__talents = {}
+function GetNumTalentTabs() return #_G.__talents end
+function GetNumTalents(tab) return #(_G.__talents[tab] or {}) end
+function GetTalentInfo(tab, index)
+    local t = (_G.__talents[tab] or {})[index]
+    if not t then return nil end
+    return t.name, 100, 1, 1, t.rank, t.maxRank or 2
+end
+FrameMethods.SetTalent = function(self, tab, index)
+    local t = (_G.__talents[tab] or {})[index]
+    self.__lines = t and t.tooltip or {}
+    for line = 1, #self.__lines do
+        local fs = _G["ForeverTotemsTalentScannerTextLeft" .. line]
+        if not fs then
+            fs = CreateFrame("Frame", "ForeverTotemsTalentScannerTextLeft" .. line)
+        end
+        fs.__text = self.__lines[line]
+    end
+end
 function GetWeaponEnchantInfo()
     if _G.__weaponBlocked then error("nope", 2) end
     local w = _G.__weapon
@@ -234,7 +261,9 @@ function PlaySoundFile() end
 function ClearOverrideBindings() end
 function SetOverrideBindingClick() end
 function StaticPopup_Show(which) return StaticPopupDialogs[which] and NewObject(which) end
-SOUNDKIT = { RAID_WARNING = 1, MAP_PING = 2, IG_QUEST_LIST_OPEN = 3, TELL_MESSAGE = 4, READY_CHECK = 5 }
+SOUNDKIT = { RAID_WARNING = 1, MAP_PING = 2, IG_QUEST_LIST_OPEN = 3, TELL_MESSAGE = 4,
+             READY_CHECK = 5, IG_PLAYER_INVITE = 6, IG_MAINMENU_OPTION_CHECKBOX_ON = 7,
+             ALARM_CLOCK_WARNING_3 = 8, AUCTION_WINDOW_OPEN = 9 }
 _G.__sounds = {}
 function PlaySound(id, channel) table.insert(_G.__sounds, { id = id, channel = channel }) end
 
@@ -250,6 +279,7 @@ local SPELL_NAMES = {
     [370] = "Purge", [17364] = "Stormstrike", [324] = "Lightning Shield", [52127] = "Water Shield", [36936] = "Totemic Recall", [108270] = "Totemic Projection", [8017] = "Rockbiter Weapon", [8024] = "Flametongue Weapon",
     [8033] = "Frostbrand Weapon", [8232] = "Windfury Weapon", [6363] = "Searing Totem", [6390] = "Stoneclaw Totem", [8154] = "Stoneskin Totem",
     [8075] = "Strength of Earth Totem",
+    [25504] = "Windfury Attack",
 }
 C_Spell = {
     GetSpellInfo = function(id)
@@ -658,6 +688,340 @@ Step("se pueden vigilar y dejar de vigilar otros", function()
     assert(ns.Cooldown:Watched()["Lightning Shield"], "no lo resuelve del libro")
     assert(ns.Cooldown:Unwatch("Lightning Shield"), "no ha quitado")
     assert(not ns.Cooldown:Watched()["Lightning Shield"], "sigue vigilado")
+end)
+
+print("\n=== Stormstrike mejorado: el cooldown se reinicia al esquivar ===")
+local function CountCues(fn)
+    local cues = 0
+    local real, realKey = ns.Warnings.PlayCue, ns.Warnings.PlayKey
+    ns.Warnings.PlayCue = function() cues = cues + 1 end
+    ns.Warnings.PlayKey = function() cues = cues + 1 return true end
+    fn()
+    ns.Warnings.PlayCue, ns.Warnings.PlayKey = real, realKey
+    return cues
+end
+
+Step("lee el talento y marca Stormstrike", function()
+    _G.__talents = { {
+        { name = "Improved Stormstrike", rank = 2, maxRank = 2, tooltip = {
+            "Improved Stormstrike", "Rank 2/2", "Passive",
+            "When you Stormstrike, you have a 100% chance to gain 50% mana " ..
+            "regeneration while casting for 15 sec, and Stormstrike's cooldown " ..
+            "has a 100% chance to reset each time you Dodge or Parry.",
+        } },
+        { name = "Ancestral Knowledge", rank = 5, maxRank = 5, tooltip = {
+            "Ancestral Knowledge", "Increases your maximum Mana by 5%.",
+        } },
+    } }
+    ns.Cooldown:Rebuild()
+    local found = ns.Cooldown:ScanTalents()
+    assert(found, "el escaneo no ha devuelto nada")
+    assert(found["Stormstrike"], "no ha visto que Stormstrike se reinicia")
+    assert(ns.Cooldown:ResetsOnAvoid("Stormstrike"), "no lo ha guardado")
+end)
+Step("un talento sin el texto no marca nada", function()
+    _G.__talents = { { { name = "Ancestral Knowledge", rank = 5, tooltip = {
+        "Ancestral Knowledge", "Increases your maximum Mana by 5%.",
+    } } } }
+    ns.Cooldown:ScanTalents()
+    assert(not ns.Cooldown:ResetsOnAvoid("Stormstrike"), "no deberia marcarlo")
+end)
+Step("un talento sin aprender no cuenta", function()
+    _G.__talents = { { { name = "Improved Stormstrike", rank = 0, tooltip = {
+        "Improved Stormstrike",
+        "Stormstrike's cooldown has a 100% chance to reset each time you Dodge or Parry.",
+    } } } }
+    ns.Cooldown:ScanTalents()
+    assert(not ns.Cooldown:ResetsOnAvoid("Stormstrike"), "aun no lo tienes puesto")
+end)
+Step("con el talento puesto, esquivar lo devuelve aunque no se pueda leer", function()
+    _G.__inCombat = true
+    _G.__cooldowns[17364] = { start = now, duration = 10 }
+    ns.Cooldown:Update()                  -- aprende la duracion
+    _G.__cooldownsBlocked = true          -- en combate el cliente se calla
+    ns.Cooldown:OnCast("Stormstrike")
+    ns.Cooldown:SetReset("Stormstrike", true)
+    now = now + 2
+    local cues = CountCues(function()
+        FireEvent("UNIT_COMBAT", "player", "DODGE")
+    end)
+    _G.__cooldownsBlocked = false
+    assert(cues == 1, "deberia avisar de que vuelve a estar listo, sonó " .. cues)
+end)
+Step("y no vuelve a avisar cuando se cumpla el tiempo original", function()
+    _G.__inCombat = true
+    _G.__cooldownsBlocked = true
+    now = now + 12
+    local cues = CountCues(function() ns.Cooldown:Update() end)
+    _G.__cooldownsBlocked = false
+    assert(cues == 0, "ya habia avisado una vez")
+end)
+Step("sin el talento, esquivar no inventa nada", function()
+    _G.__inCombat = true
+    ns.Cooldown:SetReset("Stormstrike", false)
+    _G.__cooldowns[17364] = { start = now, duration = 10 }
+    ns.Cooldown:Update()
+    _G.__cooldownsBlocked = true
+    ns.Cooldown:OnCast("Stormstrike")
+    now = now + 2
+    local cues = CountCues(function()
+        FireEvent("UNIT_COMBAT", "player", "DODGE")
+    end)
+    _G.__cooldownsBlocked = false
+    assert(cues == 0, "no deberia avisar, sonó " .. cues)
+end)
+Step("golpear al bicho no es esquivar", function()
+    _G.__inCombat = true
+    ns.Cooldown:SetReset("Stormstrike", true)
+    local cues = CountCues(function()
+        FireEvent("UNIT_COMBAT", "target", "DODGE")   -- lo esquiva el, no tu
+    end)
+    assert(cues == 0, "el esquive del enemigo no reinicia nada")
+end)
+Step("si el cliente si responde, aprende solo que se reinicia", function()
+    _G.__inCombat = true
+    ns.db.cooldowns.resets["Stormstrike"] = nil
+    ns.db.cooldowns.resetsManual["Stormstrike"] = nil
+    _G.__cooldowns[17364] = { start = now, duration = 10 }
+    ns.Cooldown:Update()
+    now = now + 2
+    _G.__cooldowns[17364] = nil                       -- el talento lo ha devuelto
+    local cues = CountCues(function()
+        FireEvent("UNIT_COMBAT", "player", "PARRY")
+    end)
+    assert(cues == 1, "deberia avisar en cuanto el cliente lo da por listo")
+    assert(ns.Cooldown:ResetsOnAvoid("Stormstrike"), "deberia haberlo aprendido")
+    _G.__inCombat = false
+end)
+Step("lo marcado a mano sobrevive a un escaneo de talentos", function()
+    ns.Cooldown:SetReset("Stormstrike", true)
+    _G.__talents = { { { name = "Ancestral Knowledge", rank = 5, tooltip = {
+        "Ancestral Knowledge", "Increases your maximum Mana by 5%.",
+    } } } }
+    ns.Cooldown:ScanTalents()
+    assert(ns.Cooldown:ResetsOnAvoid("Stormstrike"), "el escaneo ha pisado tu eleccion")
+end)
+Step("/ft cdreset lo conmuta", function()
+    SlashCmdList["FOREVERTOTEMS"]("cdreset")
+    assert(not ns.Cooldown:ResetsOnAvoid("Stormstrike"), "no lo ha apagado")
+    SlashCmdList["FOREVERTOTEMS"]("cdreset")
+    assert(ns.Cooldown:ResetsOnAvoid("Stormstrike"), "no lo ha vuelto a encender")
+end)
+Step("el informe cuenta los esquives", function()
+    local text = ns.Cooldown:Report()
+    assert(text:find("resets on dodge or parry"), "no informa del reinicio")
+    assert(text:find("dodges and parries seen"), "no cuenta los esquives")
+end)
+
+print("\n=== Windfury ===")
+Step("saca la palabra del nombre del imbue", function()
+    assert(ns.Windfury:ImbueName() == "Windfury Weapon", "no encuentra el imbue")
+    assert(ns.Windfury:GetBase() == "windfury", "palabra mal deducida: " ..
+        tostring(ns.Windfury:GetBase()))
+end)
+Step("de fabrica el proc se ve pero no suena", function()
+    assert(ns.db.windfury.sound == false, "el sonido deberia venir apagado")
+    _G.__sounds = {}
+    _G.ForeverTotemsFlash.__shown = false
+    ns.Windfury:OnCast("Windfury Attack", 25504, 55555)
+    assert(#_G.__sounds == 0, "no deberia sonar nada")
+    assert(_G.ForeverTotemsFlash:IsShown(), "pero destellar si")
+    now = now + 5
+end)
+Step("el proc suena y destella", function()
+    _G.__sounds = {}
+    _G.ForeverTotemsFlash.__shown = false
+    ns.db.windfury.enabled, ns.db.windfury.flash = true, true
+    ns.db.windfury.sound = true
+    assert(ns.Windfury:OnCast("Windfury Attack", 25504, 55555), "no lo ha reconocido")
+    assert(#_G.__sounds == 1, "no ha sonado")
+    assert(_G.ForeverTotemsFlash:IsShown(), "no ha destellado")
+    assert(_G.ForeverTotemsFlash.icon.__texture == 55555, "icono equivocado")
+end)
+Step("dos avisos seguidos del mismo proc cuentan como uno", function()
+    _G.__sounds = {}
+    local antes = ns.Windfury:Stats().count
+    ns.Windfury:OnCast("Windfury Attack", 25504, 55555)   -- el segundo golpe extra
+    assert(ns.Windfury:Stats().count == antes, "deberia haberlo agrupado")
+    assert(#_G.__sounds == 0, "no deberia sonar dos veces")
+end)
+Step("poner el imbue no es un proc", function()
+    _G.__sounds = {}
+    assert(not ns.Windfury:OnCast("Windfury Weapon", 8232, 1), "el imbue no es un proc")
+    assert(#_G.__sounds == 0, "no deberia sonar")
+end)
+Step("el totem del mismo nombre tampoco", function()
+    _G.__sounds = {}
+    assert(not ns.Windfury:OnCast("Windfury Totem", 8512, 1), "el totem no es un proc")
+    assert(#_G.__sounds == 0, "no deberia sonar")
+end)
+Step("ni ningun otro hechizo", function()
+    _G.__sounds = {}
+    assert(not ns.Windfury:OnCast("Lightning Bolt", 403, 1), "eso no es Windfury")
+    assert(#_G.__sounds == 0, "no deberia sonar")
+end)
+Step("llega desde el evento de lanzamiento, como en el juego", function()
+    _G.__sounds = {}
+    now = now + 5
+    local antes = ns.Windfury:Stats().count
+    FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", 25504)
+    assert(ns.Windfury:Stats().count == antes + 1, "el evento no llega al modulo")
+    assert(#_G.__sounds == 1, "no ha sonado desde el evento")
+end)
+Step("apagado, no hace nada", function()
+    _G.__sounds = {}
+    _G.ForeverTotemsFlash.__shown = false
+    ns.db.windfury.enabled = false
+    now = now + 5
+    ns.Windfury:OnCast("Windfury Attack", 25504, 55555)
+    assert(#_G.__sounds == 0, "no deberia sonar")
+    assert(not _G.ForeverTotemsFlash:IsShown(), "no deberia destellar")
+    ns.db.windfury.enabled = true
+end)
+Step("solo el destello, sin sonido", function()
+    _G.__sounds = {}
+    _G.ForeverTotemsFlash.__shown = false
+    ns.db.windfury.sound = false
+    now = now + 5
+    ns.Windfury:OnCast("Windfury Attack", 25504, 55555)
+    assert(#_G.__sounds == 0, "no deberia sonar")
+    assert(_G.ForeverTotemsFlash:IsShown(), "deberia destellar igual")
+    ns.db.windfury.sound = true
+end)
+Step("el destello del proc no depende del ajuste del cooldown", function()
+    ns.db.cooldowns.flash = false
+    _G.ForeverTotemsFlash.__shown = false
+    now = now + 5
+    ns.Windfury:OnCast("Windfury Attack", 25504, 55555)
+    assert(_G.ForeverTotemsFlash:IsShown(), "cada uno tiene su interruptor")
+    ns.db.cooldowns.flash = true
+end)
+Step("el informe cuenta los procs", function()
+    local text = ns.Windfury:Report()
+    assert(text:find("procs seen"), "no los cuenta")
+    assert(text:find("Windfury Attack"), "no registra los que ha visto")
+end)
+-- El registro de verdad, capturado con /ft wfprobe en el cliente. Los tiempos
+-- y los danos son los que llegaron; es la unica prueba que importa.
+local CAPTURA = {
+    { 8503.59, "WOUND", 0 },   { 8503.59, "WOUND", 98 },
+    { 8505.72, "WOUND", 51 },  { 8505.75, "WOUND", 18 },
+    { 8506.00, "cast", "Flame Shock" }, { 8506.00, "WOUND", 79 },
+    { 8506.03, "WOUND", 12 },
+    { 8507.01, "WOUND", 179 }, { 8507.37, "WOUND", 273 },
+    { 8507.67, "WOUND", 27 },
+    { 8507.71, "cast", "Stormstrike" }, { 8507.71, "WOUND", 106 },
+    { 8508.27, "WOUND", 55 },
+    { 8508.40, "WOUND", 0 },   { 8508.40, "WOUND", 111 },
+    { 8508.63, "WOUND", 108 }, { 8508.72, "WOUND", 17 },
+    { 8509.01, "WOUND", 17 },
+    { 8509.39, "MISS", 0 },    { 8509.47, "MISS", 0 },
+    { 8510.20, "MISS", 0 },    { 8510.22, "WOUND", 122 }, { 8510.22, "WOUND", 251 },
+    { 8510.64, "WOUND", 108 }, { 8511.27, "WOUND", 56 },
+}
+
+local function Replay()
+    ns.Windfury:Recalibrate()
+    local base = now
+    for _, entry in ipairs(CAPTURA) do
+        now = base + (entry[1] - CAPTURA[1][1])
+        if entry[2] == "cast" then
+            ns.Windfury:SeeCast(1, entry[3])
+        else
+            FireEvent("UNIT_COMBAT", "target", entry[2], "", entry[3])
+        end
+    end
+    now = base + 20
+end
+
+Step("sobre tu propio registro, encuentra los golpes extra", function()
+    _G.__sounds = {}
+    ns.db.windfury.enabled, ns.db.windfury.melee = true, true
+    local antes = ns.Windfury:Stats().count
+    Replay()
+    local procs = ns.Windfury:Stats().count - antes
+    assert(procs >= 1 and procs <= 3,
+        "esperaba uno o dos procs en 8 segundos, ha visto " .. procs)
+    assert(#_G.__sounds == procs, "deberia sonar una vez por proc")
+end)
+Step("el racimo de tres cuenta como un solo proc", function()
+    local texto = table.concat(ns.Windfury:Stats().pairs, "\n")
+    assert(texto:find("122"), "deberia haber visto el racimo de 122 y 251")
+    local veces = select(2, texto:gsub("251", ""))
+    assert(veces <= 1, "ha contado dos veces el mismo proc")
+end)
+Step("un tick de totem al lado de un golpe no es un proc", function()
+    local texto = table.concat(ns.Windfury:Stats().pairs, "\n")
+    assert(not texto:find("17"), "ha tomado un tick por un golpe extra: " .. texto)
+    assert(not texto:find("18"), "ha tomado un tick por un golpe extra: " .. texto)
+end)
+Step("aprende cuanto pega tu arma", function()
+    local typical = ns.Windfury:TypicalSwing()
+    assert(typical and typical > 100, "deberia rondar lo que pega el arma, es " ..
+        tostring(typical))
+    assert(ns.Windfury:Threshold() < typical, "el umbral va por debajo del golpe")
+end)
+Step("al cambiar de arma olvida lo aprendido", function()
+    FireEvent("PLAYER_EQUIPMENT_CHANGED")
+    assert(ns.Windfury:TypicalSwing() == nil, "sigue con el arma vieja en la cabeza")
+end)
+Step("golpe grande pegado a un lanzamiento tuyo no cuenta", function()
+    ns.Windfury:Recalibrate()
+    for _, damage in ipairs({ 100, 110, 120, 90, 105 }) do
+        now = now + 3
+        FireEvent("UNIT_COMBAT", "target", "WOUND", "", damage)
+    end
+    _G.__sounds = {}
+    local antes = ns.Windfury:Stats().count
+    now = now + 3
+    ns.Windfury:SeeCast(17364, "Stormstrike")
+    FireEvent("UNIT_COMBAT", "target", "WOUND", "", 100)
+    now = now + 0.05
+    FireEvent("UNIT_COMBAT", "target", "WOUND", "", 120)
+    assert(ns.Windfury:Stats().count == antes, "el golpe de Stormstrike no es Windfury")
+end)
+Step("dos golpes de verdad juntos si cuentan", function()
+    _G.__sounds = {}
+    local antes = ns.Windfury:Stats().count
+    now = now + 5
+    FireEvent("UNIT_COMBAT", "target", "WOUND", "", 100)
+    now = now + 0.04
+    FireEvent("UNIT_COMBAT", "target", "WOUND", "", 130)
+    assert(ns.Windfury:Stats().count == antes + 1, "eso es un proc")
+    assert(#_G.__sounds == 1, "deberia sonar")
+end)
+Step("apagada la segunda ruta, no mira los golpes", function()
+    ns.db.windfury.melee = false
+    local antes = ns.Windfury:Stats().count
+    now = now + 5
+    FireEvent("UNIT_COMBAT", "target", "WOUND", "", 100)
+    now = now + 0.04
+    FireEvent("UNIT_COMBAT", "target", "WOUND", "", 130)
+    assert(ns.Windfury:Stats().count == antes, "deberia estar callada")
+    ns.db.windfury.melee = true
+end)
+Step("el informe explica de donde sale", function()
+    local text = ns.Windfury:Report()
+    assert(text:find("a swing of yours is worth"), "no dice lo que ha aprendido")
+    assert(text:find("pairs taken for a proc"), "no ensena los pares")
+end)
+Step("la sonda recoge lanzamientos y golpes", function()
+    assert(ns.Windfury:ToggleProbe() == true, "no se ha encendido")
+    FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-2", 25504)
+    FireEvent("UNIT_COMBAT", "target", "WOUND", "", 137)
+    assert(ns.Windfury:ToggleProbe() == false, "no se ha apagado")
+    local text = ns.Windfury:ProbeReport()
+    assert(text:find("id=25504"), "no ha anotado el lanzamiento")
+    assert(text:find("UNIT_COMBAT"), "no ha anotado el golpe")
+    assert(text:find("137"), "no anota el dano, que es lo que delata el golpe extra")
+end)
+Step("/ft wf y /ft wfsound", function()
+    SlashCmdList["FOREVERTOTEMS"]("wf")
+    local antes = ns.db.windfury.soundChoice
+    SlashCmdList["FOREVERTOTEMS"]("wfsound")
+    assert(ns.db.windfury.soundChoice ~= antes, "no ha cambiado el sonido")
+    assert(ns.Windfury:ToggleChannel() == "Master", "no ha cambiado de canal")
+    ns.Windfury:ToggleChannel()
 end)
 
 print("\n=== Escudo de relampagos ===")
@@ -1270,14 +1634,16 @@ Step("por defecto suena suave y por el canal de efectos", function()
     assert(_G.__sounds[1].channel == "SFX", "no usa el canal SFX")
 end)
 Step("se puede cambiar de sonido y da la vuelta", function()
+    local total = #ns.Warnings:AvailableSounds()
+    assert(total >= 5, "deberia haber al menos los cinco de siempre, hay " .. total)
     local seen = {}
-    for i = 1, 6 do
+    for i = 1, total + 1 do
         local choice = ns.Warnings:CycleSound()
         seen[#seen + 1] = choice.key
     end
-    assert(#ns.Warnings:AvailableSounds() == 5, "deberia haber 5 sonidos disponibles")
-    assert(seen[1] == seen[6], "el ciclo no vuelve al principio: " .. table.concat(seen, ","))
-    assert(#seen == 6 and seen[1] ~= seen[2], "el ciclo no avanza: " .. table.concat(seen, ","))
+    assert(seen[1] == seen[total + 1],
+        "el ciclo no vuelve al principio: " .. table.concat(seen, ","))
+    assert(seen[1] ~= seen[2], "el ciclo no avanza: " .. table.concat(seen, ","))
 end)
 Step("un sonido que el cliente no tiene se ignora", function()
     local saved = SOUNDKIT.MAP_PING

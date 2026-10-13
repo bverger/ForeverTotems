@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.3
+
+New:
+
+- **Windfury procs.** The icon flashes above the bar, in the blue of the imbue
+  so it does not read as the Stormstrike cue. This client announces no cast for
+  the proc, so the extra attack itself is what gives it away: two blows landing
+  within a few hundredths of a second of each other. A Searing Totem ticking
+  next to a swing looks the same from the outside, so size decides, and what
+  your weapon hits for is learned from the fight rather than written down here.
+  It starts measuring again whenever you change weapon. No sound by default:
+  every cue this client offers is a user interface blip.
+- **Improved Stormstrike.** The talent resets the cooldown every time you dodge
+  or parry, which made a watch that only counts down wrong for half the fight.
+  Avoiding a blow now counts as a possible reset: while the client still
+  reports the cooldown it is asked and believed, and while it does not, what it
+  said earlier is used. Whether you have the talent is read off the talent
+  tooltip, learned from the fight, or set by hand with `/ft cdreset`.
+- Four more cues to choose from, and `/ft wf`, `/ft wfprobe` and `/ft cdtest`
+  to see what any of this is doing.
+
 ## 1.0.2
 
 Fixed:
