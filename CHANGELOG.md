@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.4
+
+New:
+
+- **`/ft set cycle`** switches to the next set and wraps around to the first,
+  so a single button (handy on a gamepad) steps through all of them.
+  `/ft set prev` goes the other way. Thanks to tobaljackson for the idea and
+  the first version of it.
+
+Fixed:
+
+- Water Shield was missing from the shield button. The addon looked it up by a
+  spell id from a later expansion, which does not exist on this client.
+- Earth totems such as Stoneskin and Strength of Earth could end up under Fire.
+  When a fight ended, the last totem you had cast was filed under every element
+  the addon had been estimating, and the mistake was saved. That no longer
+  happens, and totems saved under the wrong element are put back on login.
+
 ## 1.0.3
 
 New:

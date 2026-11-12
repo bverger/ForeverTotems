@@ -10,6 +10,7 @@ Commands
 /ft show|hide  shows or hides the bar
 /ft reset      puts the bar back in the center
 /ft set <n>    switches set by number or by name
+/ft set cycle  switches to the next set, wrapping around (prev goes back)
 /ft sound      cycles the warning sound and plays it
 /ft macro      shows the active set's macro so you can copy it
 /ft scan       lists the detected totems and their element

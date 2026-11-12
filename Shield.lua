@@ -10,7 +10,16 @@ ns.Shield = Shield
 
 -- Seeds only, to learn the localised names. Lightning, Water and Earth Shield:
 -- whichever ones this shaman knows show up in the flyout.
-local SHIELD_SEED_IDS = { 324, 52127, 974 }
+-- A spell id that does not exist on this client gives no name at all, and the
+-- only Water Shield seed used to be a later expansion's, so Water Shield never
+-- made the list. Every id it has had is tried now, and the English names catch
+-- whatever id this client gave it.
+local SHIELD_SEED_IDS = {
+    324,                            -- Lightning Shield
+    24398, 33736, 52127, 408510,    -- Water Shield
+    974, 32593, 32594,              -- Earth Shield
+}
+local SHIELD_ENGLISH_NAMES = { "Lightning Shield", "Water Shield", "Earth Shield" }
 
 local state = { active = false, expires = 0, charges = 0, warned = false, blocked = false }
 
@@ -19,6 +28,7 @@ local state = { active = false, expires = 0, charges = 0, warned = false, blocke
 --------------------------------------------------------------------------------
 function Shield:Scan()
     local wanted, list, seen = {}, {}, {}
+    for _, name in ipairs(SHIELD_ENGLISH_NAMES) do wanted[name] = true end
     for _, id in ipairs(SHIELD_SEED_IDS) do
         local name = ns.SpellInfo(id)
         if name then wanted[name] = true end

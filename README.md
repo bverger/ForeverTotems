@@ -33,6 +33,7 @@ is measured from a landed hit versus predicted from your weapon speed.
     /ft              open the configuration
     /ft lock         lock the bar in place
     /ft set <name>   switch to another set
+    /ft set cycle    switch to the next set (prev goes back); one key for all your sets
     /ft makemacro    create a macro for the active set and put it on your cursor
     /ft sync         write the active set into the game's totem bar
     /ft sound        cycle the warning sound

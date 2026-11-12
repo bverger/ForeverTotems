@@ -515,6 +515,48 @@ Step("al salir de combate vuelven los datos reales", function()
     assert(not ns:IsSecret(), "sigue creyendo que hay secretos")
 end)
 
+Step("tras el combate no archiva el ultimo totem en otro elemento", function()
+    -- Stoneskin y luego Searing a ciegas; al salir de combate se releen los
+    -- dos slots a la vez y el ultimo lanzado no debe acabar en los dos
+    local savedTotems = _G.__totems
+    ns.db.durations["Stoneskin Totem"] = 120
+    _G.__secretMode = true
+    FireEvent("PLAYER_REGEN_DISABLED")
+    FireEvent("PLAYER_TOTEM_UPDATE")
+    FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "c-1", 8071)
+    FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "c-2", 3599)
+    assert(ns:GetTotem(2).synthetic, "Stoneskin deberia estar estimado")
+    _G.__secretMode = false
+    _G.__totems = {
+        [1] = { name = "Searing Totem", start = now, duration = 60, icon = 103599 },
+        [2] = { name = "Stoneskin Totem", start = now, duration = 120, icon = 108071 },
+    }
+    FireEvent("PLAYER_REGEN_ENABLED")
+    assert(ns:GetSpellSlot("Searing Totem") == ns.FIRE,
+        "Searing archivado en " .. tostring(ns:GetSpellSlot("Searing Totem")))
+    assert(ns:GetSpellSlot("Stoneskin Totem") == ns.EARTH,
+        "Stoneskin archivado en " .. tostring(ns:GetSpellSlot("Stoneskin Totem")))
+    _G.__totems = savedTotems
+    ns:ScanTotems()
+end)
+Step("olvida totems guardados en el elemento equivocado", function()
+    ns.db.learned["Stoneskin Totem"] = ns.FIRE
+    ns.db.learned["Strength of Earth Totem"] = ns.FIRE
+    ns.db.learned["Totem del Vacio Eterno"] = ns.WATER   -- sin pista: se respeta
+    ns:ForgetWrongElements()
+    assert(ns.db.learned["Stoneskin Totem"] == nil, "Stoneskin sigue en Fuego")
+    assert(ns.db.learned["Strength of Earth Totem"] == nil, "Strength of Earth sigue en Fuego")
+    assert(ns:GetSpellSlot("Stoneskin Totem") == ns.EARTH, "Stoneskin deberia volver a Tierra")
+    assert(ns.db.learned["Totem del Vacio Eterno"] == ns.WATER, "ha borrado uno sin pista")
+    ns.db.learned["Totem del Vacio Eterno"] = nil
+end)
+Step("asignar a mano no ensena un elemento que contradice el nombre", function()
+    local prev = ns.db.sets[1].spells[ns.FIRE]
+    ns.Sets:AssignSpell(1, ns.FIRE, { name = "Stoneskin Totem", icon = 108071 })
+    assert(ns.db.learned["Stoneskin Totem"] ~= ns.FIRE, "ha aprendido Stoneskin como Fuego")
+    ns.Sets:AssignSpell(1, ns.FIRE, prev)
+end)
+
 print("\n=== Aviso de rango ===")
 Step("solo salta una vez por totem", function()
     local count = 0
@@ -1030,6 +1072,21 @@ Step("detecta los escudos que conoces", function()
     local list = ns.Shield:Scan()
     assert(#list == 2, "esperaba 2 escudos del libro, hay " .. #list)
     assert(ns.Shield:GetChosen(), "no ha elegido ninguno")
+end)
+Step("Water Shield aparece aunque este cliente le de otro id", function()
+    local saved = SPELL_NAMES[52127]
+    SPELL_NAMES[52127] = nil
+    SPELL_NAMES[77777] = "Water Shield"
+    BOOK[#BOOK + 1] = 77777
+    local list = ns.Shield:Scan()
+    BOOK[#BOOK] = nil
+    SPELL_NAMES[77777], SPELL_NAMES[52127] = nil, saved
+    ns.Shield:Scan()
+    local found
+    for _, spell in ipairs(list) do
+        if spell.name == "Water Shield" then found = true end
+    end
+    assert(found, "Water Shield no sale entre los escudos")
 end)
 Step("lee las cargas del buff", function()
     _G.__unit.player = { exists = true, auras = {
@@ -1813,9 +1870,22 @@ Step("asignar tecla", function()
     assert(ns.db.binds.slots[1] == nil, "la tecla esta duplicada")
     assert(ns.db.binds.sequence == "SHIFT-T")
 end)
-for _, cmd in ipairs({ "", "lock", "unlock", "show", "hide", "reset", "set PvP", "set 1", "macro", "scan", "debug", "loquesea" }) do
+for _, cmd in ipairs({ "", "lock", "unlock", "show", "hide", "reset", "set PvP", "set 1", "set cycle", "set prev", "macro", "scan", "debug", "loquesea" }) do
     Step("/ft " .. cmd, function() SlashCmdList["FOREVERTOTEMS"](cmd) end)
 end
+Step("/ft set cycle da la vuelta y prev retrocede", function()
+    local n = #ns.db.sets
+    assert(n >= 2, "hacen falta al menos dos sets")
+    ns.Sets:SetActive(n)
+    SlashCmdList["FOREVERTOTEMS"]("set cycle")
+    assert(ns.Sets:GetActiveIndex() == 1, "cycle desde el ultimo deberia ir al primero")
+    SlashCmdList["FOREVERTOTEMS"]("set cycle")
+    assert(ns.Sets:GetActiveIndex() == 2, "cycle deberia avanzar")
+    SlashCmdList["FOREVERTOTEMS"]("set prev")
+    SlashCmdList["FOREVERTOTEMS"]("set prev")
+    assert(ns.Sets:GetActiveIndex() == n, "prev desde el primero deberia ir al ultimo")
+    ns.Sets:SetActive(1)
+end)
 Step("SPELLS_CHANGED + temporizador", function()
     FireEvent("SPELLS_CHANGED")
     RunTimers()
