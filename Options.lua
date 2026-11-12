@@ -846,9 +846,17 @@ local function HandleSlash(input)
         ns.db.bar.point, ns.db.bar.x, ns.db.bar.y = "CENTER", 0, -180
         ns.Bar:Reposition(); ns:Print("Bar moved back to the center.")
     elseif cmd == "set" then
+        local which = rest:lower()
+        if which == "cycle" or which == "next" or which == "prev" or which == "previous" then
+            local step = (which == "prev" or which == "previous") and -1 or 1
+            if ns.Sets:Cycle(step) then
+                ns:Print("Active set: " .. ns.Sets:GetActive().name)
+            end
+            return
+        end
         local index = tonumber(rest) or ns.Sets:FindByName(rest)
         if index and ns.Sets:SetActive(index) then
-            ns:Print("Set activo: " .. ns.Sets:GetActive().name)
+            ns:Print("Active set: " .. ns.Sets:GetActive().name)
         else
             ns:Print("No such set. Available ones:")
             for i, s in ipairs(ns.db.sets) do ns:Print(("  %d. %s"):format(i, s.name)) end
@@ -954,7 +962,7 @@ local function HandleSlash(input)
         ns.db.debug = not ns.db.debug
         ns:Print("Debug: " .. (ns.db.debug and "ON" or "OFF"))
     else
-        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n>, watch <spell>, cdtest, cdreset, cdsound, cdloud, wf, wfprobe, wfsound, wfloud, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
+        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n|cycle|prev>, watch <spell>, cdtest, cdreset, cdsound, cdloud, wf, wfprobe, wfsound, wfloud, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
     end
 end
 

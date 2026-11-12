@@ -30,6 +30,14 @@ function Sets:SetActive(index)
     return true
 end
 
+-- Step through the sets in order and wrap around: one button for all of them
+function Sets:Cycle(step)
+    local count = #ns.db.sets
+    if count == 0 then return false end
+    local index = (self:GetActiveIndex() - 1 + (step or 1)) % count + 1
+    return self:SetActive(index)
+end
+
 function Sets:FindByName(name)
     if not name then return nil end
     local lower = name:lower()
@@ -75,7 +83,7 @@ function Sets:AssignSpell(index, slot, spell)
     local set = ns.db.sets[index]
     if not set then return false end
     set.spells[slot] = spell and { name = spell.name, icon = spell.icon } or nil
-    if spell and spell.name then
+    if spell and spell.name and not ns:ContradictsHint(spell.name, slot) then
         -- assigning by hand also teaches the totem's element
         ns.db.learned[spell.name] = slot
     end

@@ -269,11 +269,10 @@ function ns:GetTotemKeyword()
     return totemKeyword
 end
 
--- A spell's element: what we learned beats the English hint
-function ns:GetSpellSlot(spellName)
+-- The element the English name points at, or nil on other languages and on
+-- totems the hints do not know
+function ns:HintSlot(spellName)
     if not spellName then return nil end
-    local learned = self.db and self.db.learned[spellName]
-    if learned then return learned end
     local lower = spellName:lower()
     for slot, hints in pairs(ENGLISH_HINTS) do
         for _, hint in ipairs(hints) do
@@ -281,6 +280,33 @@ function ns:GetSpellSlot(spellName)
         end
     end
     return nil
+end
+
+-- A spell's element: what we learned beats the English hint
+function ns:GetSpellSlot(spellName)
+    if not spellName then return nil end
+    local learned = self.db and self.db.learned[spellName]
+    if learned then return learned end
+    return self:HintSlot(spellName)
+end
+
+-- Would teaching this spell this slot contradict its English name
+function ns:ContradictsHint(spellName, slot)
+    local hint = self:HintSlot(spellName)
+    return hint ~= nil and hint ~= slot
+end
+
+-- Earlier versions could file a totem under the wrong element (see ScanTotems)
+-- and the mistake was saved. Drop whatever the name plainly contradicts.
+function ns:ForgetWrongElements()
+    local dropped = 0
+    for name, slot in pairs(self.db.learned) do
+        if self:ContradictsHint(name, slot) then
+            self.db.learned[name] = nil
+            dropped = dropped + 1
+        end
+    end
+    if dropped > 0 then self:Debug("dropped", dropped, "totems filed under the wrong element") end
 end
 
 -- ns.totemSpells        -> flat list { name, icon, slot }
@@ -377,11 +403,20 @@ function ns:ScanTotems()
                 if pending and (now - pending.time) <= 2.5 then
                     local sameName = pending.name == name
                     local sameIcon = icon and pending.icon and icon == pending.icon
+                    -- The last cast is only a guess for this slot when the
+                    -- names do not match. After a fight every slot we were
+                    -- estimating is read again at once, and the last totem
+                    -- you cast would be filed under all of them: that is how
+                    -- Stoneskin ended up under Fire. So no guessing on those,
+                    -- and never against what the name says.
                     local looksTotem = HasWord(pending.name, self:GetTotemKeyword())
+                        and not cur.synthetic
+                        and not self:ContradictsHint(pending.name, slot)
                     if sameName or sameIcon or looksTotem then
                         spellName = pending.name
                         self.db.learned[spellName] = slot
                         state.lastBySlot[slot] = { name = spellName, icon = pending.icon or icon }
+                        state.pending = nil   -- one cast, one slot
                     end
                 end
 
@@ -514,6 +549,8 @@ ef:SetScript("OnEvent", function(self, event, ...)
             ns.db.windfury.sound = false
             ns.db.dbVersion = 7
         end
+        -- Cheap, and it also mends what older versions got wrong
+        ns:ForgetWrongElements()
 
         local charName = UnitName("player") or "?"
         local realm = GetRealmName() or "?"
