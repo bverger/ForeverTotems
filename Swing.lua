@@ -222,6 +222,8 @@ events:SetScript("OnEvent", function(_, event, ...)
         end
     elseif event == "UNIT_COMBAT" then
         local unit, action = ...
+        -- Combat data can come through secret, and a secret cannot be compared
+        if ns.AnySecret(unit, action) then return end
         -- Only damage on the unit you are hitting. Never "targettarget": in a
         -- melee fight that is you, so every hit you took reset your swing.
         if unit == "target" then

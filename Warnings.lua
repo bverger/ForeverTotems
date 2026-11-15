@@ -112,6 +112,9 @@ end
 
 -- SFX channel, not Master: this way the warning respects the game's sound
 -- effects volume instead of blasting over everything.
+-- Nothing about the same totem twice inside this, whatever the distance says
+local RANGE_SETTLE = 1.5
+
 local function PlayAlertSound()
     if not ns.db.warnings.sound then return end
     local choice = W:GetSoundChoice()
@@ -215,18 +218,34 @@ function W:Update(elapsed)
     if not px then return end
 
     local limit = cfg.rangeYards or 22
+    -- Leaving and coming back are both worth hearing, and in a fight you cross
+    -- that line over and over. What must not happen is a chirp twice a second
+    -- while you stand on the edge, so the two lines are not the same one: you
+    -- are out at the limit, and back in only once properly inside it again.
+    local margin = cfg.rangeMargin or 3
+    local backIn = math.max(limit - margin, limit * 0.5)
 
     for slot = 1, ns.MAX_SLOTS do
         local totem = ns:GetTotem(slot)
-        -- A single warning per totem: it re-arms when you drop it again
-        if totem and totem.have and totem.wx and totem.wc == pc and not totem.warnedRange then
+        if totem and totem.have and totem.wx and totem.wc == pc then
             local dx, dy = px - totem.wx, py - totem.wy
             local dist = math.sqrt(dx * dx + dy * dy)
-            if dist > limit then
-                totem.warnedRange = true
+            local element = ns.ELEMENTS[slot]
+            local settled = (now - (totem.lastRangeWarn or 0)) > RANGE_SETTLE
+
+            if dist > limit and not totem.outOfRange and settled then
+                totem.outOfRange = true
                 totem.lastRangeWarn = now
-                local element = ns.ELEMENTS[slot]
-                self:Alert(string.format("Out of range of %s (%d yd)", totem.name or element.label, math.floor(dist)), 0.6, 0.8, 1, true)
+                self:Alert(string.format("Out of range of %s (%d yd)",
+                    totem.name or element.label, math.floor(dist)), 0.6, 0.8, 1, true)
+
+            elseif dist <= backIn and totem.outOfRange and settled then
+                totem.outOfRange = false
+                totem.lastRangeWarn = now
+                if cfg.rangeReturn then
+                    self:Alert(string.format("Back in range of %s",
+                        totem.name or element.label), 0.5, 1, 0.6, true)
+                end
             end
         end
     end

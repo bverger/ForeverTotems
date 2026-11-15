@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.5
+
+Fixed:
+
+- **The flood of errors when a fight started.** The range check reads your
+  position from the map, and in combat this client can hand that back
+  protected, which an addon is not allowed to do arithmetic on. That read runs
+  several times a second while a totem is out, so the client ended up putting
+  its "this addon has too many errors" dialog in front of you, over and over,
+  and a reload only reset the counter. The read is guarded now, step by step,
+  and with no coordinates the range warning simply keeps quiet.
+- Everything the bar does on each frame is now wrapped: whatever fails is
+  reported once, counted, listed under faults in `/ft check`, and the rest
+  keeps working. An addon cannot bury you in dialogs that way.
+- The data carried by combat events is checked before it is read, in the swing
+  timer, the cooldown watch and the Windfury detector alike.
+
+Changed:
+
+- **Leaving the totem range is a line you cross now.** It warns you on the way
+  out, again when you come back in, and again the next time you leave. Before,
+  it warned once per totem and then stayed quiet however many times you crossed
+  it, which is no use in pvp. There are a few yards of slack between the two
+  lines and a moment of settling, so standing on the edge does not set it
+  chirping. The way back in can be turned off on its own.
+
 ## 1.0.4
 
 New:
@@ -17,6 +43,7 @@ Fixed:
   When a fight ended, the last totem you had cast was filed under every element
   the addon had been estimating, and the mistake was saved. That no longer
   happens, and totems saved under the wrong element are put back on login.
+
 
 ## 1.0.3
 

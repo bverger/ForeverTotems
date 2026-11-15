@@ -305,6 +305,8 @@ end
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, unit, action)
     if event == "UNIT_COMBAT" then
+        -- A secret cannot be compared, nor used as a table key
+        if ns.AnySecret(unit, action) then return end
         if unit == "player" and AVOID_ACTIONS[action] then Cooldown:OnAvoid(action) end
         return
     end

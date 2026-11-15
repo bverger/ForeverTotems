@@ -621,6 +621,10 @@ local function BuildWindow()
     MakeSlider(content, "Range in yards", x, y, 10, 45, 1,
         function() return db.warnings.rangeYards end,
         function(v) db.warnings.rangeYards = v end)
+    y = y - 34
+    MakeCheck(content, "And say when you are back in range", x, y,
+        function() return db.warnings.rangeReturn end,
+        function(v) db.warnings.rangeReturn = v end)
     y = y - 42
     MakeLabel(content, "Warn via:", x, y + 4, 12, 1, 1, 1)
     MakeCheck(content, "Sound", x + 70, y,
