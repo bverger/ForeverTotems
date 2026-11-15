@@ -49,6 +49,8 @@ local defaults = {
         expire = true, expireAt = 4,
         death = true,
         range = true, rangeYards = 22,
+        -- and a word when you are back inside it, which is what matters in pvp
+        rangeReturn = true, rangeMargin = 3,
         sound = true, chat = true, screen = true,
         soundChoice = "soft",
     },
@@ -140,6 +142,43 @@ local function AnySecret(...)
     return false
 end
 ns.AnySecret = AnySecret
+
+--------------------------------------------------------------------------------
+-- Faults
+--
+-- Anything that breaks inside a frame handler breaks twenty times a second,
+-- and what you see is the client putting a dialog in front of you telling you
+-- this addon is misbehaving, over and over, until you reload. So the work done
+-- on every tick is run through here: the first one is reported, the rest are
+-- counted, and the parts that still work keep working.
+--------------------------------------------------------------------------------
+local faults = {}
+ns.faults = faults
+
+function ns.Safely(name, fn, ...)
+    local ok, err = pcall(fn, ...)
+    if ok then return true end
+
+    local fault = faults[name]
+    if not fault then
+        fault = { count = 0, first = tostring(err), at = GetTime() }
+        faults[name] = fault
+        ns:Print(("something went wrong in %s, and it has been switched off for now:"):format(name))
+        ns:Print("  " .. fault.first)
+        ns:Print("  This will not be repeated. |cffffd100/ft check|r has the details.")
+    end
+    fault.count = fault.count + 1
+    return false
+end
+
+function ns:FaultReport()
+    local lines = {}
+    for name, fault in pairs(faults) do
+        lines[#lines + 1] = ("  %s: %d times, first was %s"):format(name, fault.count, fault.first)
+    end
+    if #lines == 0 then return "  nothing has gone wrong" end
+    return table.concat(lines, "\n")
+end
 
 function ns:IsSecret()
     return self.state.secret and true or false
@@ -357,18 +396,33 @@ end
 --------------------------------------------------------------------------------
 -- World position (in yards) for the range warning
 --------------------------------------------------------------------------------
+-- Where you are standing is exactly the sort of thing this client withholds in
+-- a fight, and in a battleground most of all. A secret cannot be compared or
+-- subtracted, so every step is checked before it is used and the whole read is
+-- wrapped: an error here would repeat for as long as the fight lasts.
 function ns.GetWorldPos()
     if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetWorldPosFromMapPos) then return nil end
-    local map = C_Map.GetBestMapForUnit("player")
-    if not map then return nil end
-    local pos = C_Map.GetPlayerMapPosition(map, "player")
-    if not pos then return nil end
-    local px, py = pos:GetXY()
-    if not px or (px == 0 and py == 0) then return nil end
-    local continent, world = C_Map.GetWorldPosFromMapPos(map, pos)
-    if not world then return nil end
-    local wx, wy = world:GetXY()
-    if not wx then return nil end
+
+    local ok, wx, wy, continent = pcall(function()
+        local map = C_Map.GetBestMapForUnit("player")
+        if AnySecret(map) or not map then return nil end
+
+        local pos = C_Map.GetPlayerMapPosition(map, "player")
+        if AnySecret(pos) or not pos then return nil end
+
+        local px, py = pos:GetXY()
+        if AnySecret(px, py) then return nil end
+        if not px or (px == 0 and py == 0) then return nil end
+
+        local cont, world = C_Map.GetWorldPosFromMapPos(map, pos)
+        if AnySecret(cont, world) or not world then return nil end
+
+        local x, y = world:GetXY()
+        if AnySecret(x, y) or not x then return nil end
+        return x, y, cont
+    end)
+
+    if not ok or not wx then return nil end
     return wx, wy, continent
 end
 
@@ -423,7 +477,7 @@ function ns:ScanTotems()
                 cur.have, cur.name, cur.start, cur.duration, cur.icon = true, name, start, duration, icon
                 cur.spellName = spellName or cur.spellName
                 cur.synthetic = false
-                cur.warnedExpire, cur.warnedRange, cur.lastRangeWarn = false, false, 0
+                cur.warnedExpire, cur.outOfRange, cur.lastRangeWarn = false, false, 0
                 cur.wx, cur.wy, cur.wc = self.GetWorldPos()
                 changed = true
 
@@ -462,7 +516,7 @@ function ns:PlaceSyntheticTotem(spellName, icon)
     cur.have, cur.name, cur.start, cur.duration = true, spellName, GetTime(), duration
     cur.icon = icon or cur.icon
     cur.spellName, cur.synthetic = spellName, true
-    cur.warnedExpire, cur.warnedRange, cur.lastRangeWarn = false, false, 0
+    cur.warnedExpire, cur.outOfRange, cur.lastRangeWarn = false, false, 0
     cur.wx, cur.wy, cur.wc = self.GetWorldPos()
     state.lastBySlot[slot] = { name = spellName, icon = cur.icon }
     self:Fire("TOTEMS_CHANGED")

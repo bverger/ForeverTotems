@@ -313,7 +313,10 @@ local function V(x, y) return setmetatable({ x = x, y = y }, Vector) end
 _G.__playerPos = V(0.5, 0.5)
 C_Map = {
     GetBestMapForUnit = function() return 1429 end,
-    GetPlayerMapPosition = function() return _G.__playerPos end,
+    GetPlayerMapPosition = function()
+        if _G.__secretPos then return _G.__Secret() end
+        return _G.__playerPos
+    end,
     GetWorldPosFromMapPos = function(_, pos) return 0, V(pos.x * 1000, pos.y * 1000) end,
     GetMapInfo = function() return { name = "Elwynn" } end,
 }
@@ -334,6 +337,7 @@ for _, mm in ipairs({ "__add", "__sub", "__mul", "__div", "__mod", "__pow", "__u
     SecretMT[mm] = boom
 end
 local function Secret(v) return setmetatable({}, SecretMT) end
+_G.__Secret = Secret   -- para los stubs declarados mas arriba
 
 function issecretvalue(v) return getmetatable(v) == SecretMT end
 function hasanysecretvalues(...)
@@ -574,7 +578,121 @@ Step("se rearma al plantar otro totem", function()
     _G.__playerPos = V(0.5, 0.5)
     _G.__totems[1] = { name = "Searing Totem", start = now, duration = 60, icon = 103599 }
     FireEvent("PLAYER_TOTEM_UPDATE")
-    assert(ns:GetTotem(1).warnedRange == false, "no se ha rearmado el aviso")
+    assert(ns:GetTotem(1).outOfRange == false, "no se ha rearmado el aviso")
+end)
+
+-- Lo que pidio un usuario en CurseForge: en pvp entras y sales del rango una y
+-- otra vez, y solo avisaba la primera vez que salias.
+local function CountAlerts(fn)
+    local textos = {}
+    local realAlert = ns.Warnings.Alert
+    ns.Warnings.Alert = function(self, text, ...)
+        textos[#textos + 1] = text
+        return realAlert(self, text, ...)
+    end
+    fn()
+    ns.Warnings.Alert = realAlert
+    return textos
+end
+
+local function Mover(x)
+    _G.__playerPos = V(x, 0.5)
+    now = now + 3
+    ns.Warnings:Update(1.0)
+end
+
+Step("avisa al volver a entrar en rango", function()
+    _G.__playerPos = V(0.5, 0.5)
+    _G.__totems[1] = { name = "Searing Totem", start = now, duration = 600, icon = 103599 }
+    FireEvent("PLAYER_TOTEM_UPDATE")
+    local textos = CountAlerts(function()
+        Mover(0.9)      -- fuera
+        Mover(0.5)      -- dentro otra vez
+    end)
+    assert(#textos == 2, "esperaba salida y vuelta, hubo " .. #textos)
+    assert(textos[1]:find("Out of range"), "el primero deberia ser la salida")
+    assert(textos[2]:find("Back in range"), "el segundo deberia ser la vuelta")
+end)
+Step("y vuelve a avisar la segunda vez que sales", function()
+    local textos = CountAlerts(function()
+        Mover(0.9)
+        Mover(0.5)
+        Mover(0.9)
+    end)
+    assert(#textos == 3, "cada cruce deberia avisar, hubo " .. #textos)
+    assert(textos[3]:find("Out of range"), "la ultima deberia ser otra salida")
+end)
+Step("si apagas el aviso de vuelta, solo suenan las salidas", function()
+    ns.db.warnings.rangeReturn = false
+    local textos = CountAlerts(function()
+        Mover(0.5)
+        Mover(0.9)
+    end)
+    ns.db.warnings.rangeReturn = true
+    assert(#textos == 1, "solo la salida, hubo " .. #textos)
+end)
+Step("quedarse en el borde no dispara una traca", function()
+    Mover(0.5)
+    -- justo en el limite: el totem esta a 22 yardas escasas
+    local textos = CountAlerts(function()
+        for i = 1, 10 do
+            _G.__playerPos = V(0.5 + 0.022 + (i % 2) * 0.0005, 0.5)
+            now = now + 0.5
+            ns.Warnings:Update(1.0)
+        end
+    end)
+    assert(#textos <= 1, "esta repicando en el borde: " .. #textos)
+end)
+Step("sin coordenadas, el aviso calla en vez de petar", function()
+    Mover(0.5)
+    _G.__secretPos = true
+    local ok = pcall(function()
+        local textos = CountAlerts(function()
+            Mover(0.9)
+            Mover(0.5)
+        end)
+        assert(#textos == 0, "no puede avisar de lo que no sabe")
+    end)
+    _G.__secretPos = false
+    assert(ok, "ha petado cuando el cliente oculta tu posicion")
+end)
+Step("y el escaneo de totems tampoco peta sin coordenadas", function()
+    _G.__secretPos = true
+    local ok = pcall(function()
+        _G.__totems[2] = { name = "Stoneskin Totem", start = now, duration = 60, icon = 108071 }
+        FireEvent("PLAYER_TOTEM_UPDATE")
+        ns.Warnings:Update(1.0)
+    end)
+    _G.__secretPos = false
+    assert(ok, "ha petado al plantar un totem sin coordenadas")
+end)
+
+print("\n=== Red de seguridad ===")
+Step("un modulo que peta no se lleva por delante la barra", function()
+    local real = ns.Swing.Update
+    ns.Swing.Update = function() error("fallo de mentira") end
+    local tick = ns.Bar.frame:GetScript("OnUpdate")
+    local ok = pcall(tick, ns.Bar.frame, 1.0)
+    ns.Swing.Update = real
+    assert(ok, "el tick entero se ha caido por un modulo")
+    assert(ns.faults["the swing timer"], "no ha anotado el fallo")
+end)
+Step("y solo lo cuenta una vez por mucho que se repita", function()
+    local real = ns.Swing.Update
+    ns.Swing.Update = function() error("fallo de mentira") end
+    local tick = ns.Bar.frame:GetScript("OnUpdate")
+    local dichos = 0
+    local realPrint = ns.Print
+    ns.Print = function(self, text) dichos = dichos + 1 end
+    for i = 1, 20 do pcall(tick, ns.Bar.frame, 1.0) end
+    ns.Print = realPrint
+    ns.Swing.Update = real
+    assert(dichos == 0, "no deberia decir nada mas, dijo " .. dichos)
+    assert(ns.faults["the swing timer"].count > 1, "deberia seguir contandolos")
+end)
+Step("el diagnostico los lista", function()
+    local text = ns.Bar:Diagnose()
+    assert(text:find("the swing timer"), "no sale en /ft check")
 end)
 
 print("\n=== Barra ===")

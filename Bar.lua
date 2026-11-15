@@ -426,18 +426,21 @@ function Bar:Create()
         if self.elapsed < 0.05 then return end
         local delta = self.elapsed
         self.elapsed = 0
-        Bar:UpdateTimers()
-        if ns.Warnings then ns.Warnings:Update(delta) end
-        Bar:UpdateMapHiding()
-        if ns.Swing then ns.Swing:Update() end
-        if ns.Cooldown then ns.Cooldown:Update() end
-        Bar:UpdateSwing()
+        local Safely = ns.Safely
+        Safely("the timers", Bar.UpdateTimers, Bar)
+        if ns.Warnings then Safely("the warnings", ns.Warnings.Update, ns.Warnings, delta) end
+        Safely("hiding for the map", Bar.UpdateMapHiding, Bar)
+        if ns.Swing then Safely("the swing timer", ns.Swing.Update, ns.Swing) end
+        if ns.Cooldown then Safely("the cooldown watch", ns.Cooldown.Update, ns.Cooldown) end
+        Safely("the swing bar", Bar.UpdateSwing, Bar)
         if ns.Weapon then
             Bar.weaponAccum = (Bar.weaponAccum or 0) + delta
             if Bar.weaponAccum > 1 then
                 Bar.weaponAccum = 0
-                ns.Weapon:Refresh()
-                ns.Weapon:Update()
+                Safely("the weapon imbue", function()
+                    ns.Weapon:Refresh()
+                    ns.Weapon:Update()
+                end)
             end
         end
     end)
@@ -847,6 +850,8 @@ function Bar:Diagnose()
 
     add("Bar diagnostics:")
     add(("  in combat: %s"):format(tostring(InCombatLockdown())))
+    add("  faults:")
+    add(ns:FaultReport())
     add(("  bar shown: %s  scale: %.2f  strata: %s  level: %d"):format(
         tostring(self.frame:IsShown()), self.frame:GetScale() or 0,
         tostring(self.frame:GetFrameStrata()), self.frame:GetFrameLevel() or 0))

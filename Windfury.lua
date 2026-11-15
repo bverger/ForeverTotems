@@ -171,6 +171,9 @@ end
 
 function Windfury:OnMelee(action, damage)
     if not ns.db.windfury.melee then return false end
+    -- The damage is the whole point here, and it is also the most likely thing
+    -- to arrive secret. Arithmetic on one of those is an error.
+    if ns.AnySecret(action, damage) then return false end
     damage = tonumber(damage) or 0
     if action == "WOUND" and damage > 0 then self:Record(damage) end
 
@@ -271,6 +274,10 @@ local function ProbeAdd(text)
 end
 
 probe:SetScript("OnEvent", function(_, event, unit, action, descriptor, damage)
+    if ns.AnySecret(unit, action, descriptor, damage) then
+        ProbeAdd(("%-12s withheld by the client"):format(event))
+        return
+    end
     if unit ~= "player" and unit ~= "target" then return end
     ProbeAdd(("%-12s %-7s %-7s %s"):format(event, tostring(unit), tostring(action),
         tostring(damage or descriptor or "")))
