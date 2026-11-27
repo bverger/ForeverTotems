@@ -304,18 +304,20 @@ end
 --------------------------------------------------------------------------------
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, unit, action)
-    if event == "UNIT_COMBAT" then
-        -- A secret cannot be compared, nor used as a table key
-        if ns.AnySecret(unit, action) then return end
-        if unit == "player" and AVOID_ACTIONS[action] then Cooldown:OnAvoid(action) end
-        return
-    end
-    -- Talents moved: what was read off them is stale
-    if Cooldown.rescanning then return end
-    Cooldown.rescanning = true
-    C_Timer.After(1, function()
-        Cooldown.rescanning = nil
-        Cooldown:ScanTalents()
+    ns.Safely("the cooldown watch", function()
+        if event == "UNIT_COMBAT" then
+            -- A secret cannot be compared, nor used as a table key
+            if ns.AnySecret(unit, action) then return end
+            if unit == "player" and AVOID_ACTIONS[action] then Cooldown:OnAvoid(action) end
+            return
+        end
+        -- Talents moved: what was read off them is stale
+        if Cooldown.rescanning then return end
+        Cooldown.rescanning = true
+        C_Timer.After(1, function()
+            Cooldown.rescanning = nil
+            Cooldown:ScanTalents()
+        end)
     end)
 end)
 

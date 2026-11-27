@@ -962,21 +962,63 @@ local function HandleSlash(input)
             local el = ns.ELEMENTS[e.slot]
             ns:Print(("  %s - %s"):format(e.name, el and el.label or "unclassified"))
         end
+    elseif cmd == "slash" then
+        ns.db.yieldFT = not ns.db.yieldFT
+        if ns.db.yieldFT then
+            ns:Print("Leaving |cffffd100/ft|r to the other addon from the next login. Use /fortotems.")
+        else
+            ns:Print("Claiming |cffffd100/ft|r again from the next login. If another addon wants it too, whoever loads last wins.")
+        end
     elseif cmd == "debug" then
         ns.db.debug = not ns.db.debug
         ns:Print("Debug: " .. (ns.db.debug and "ON" or "OFF"))
     else
-        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n|cycle|prev>, watch <spell>, cdtest, cdreset, cdsound, cdloud, wf, wfprobe, wfsound, wfloud, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, debug")
+        ns:Print("Commands: /ft (options), lock, unlock, show, hide, reset, set <name|n|cycle|prev>, watch <spell>, cdtest, cdreset, cdsound, cdloud, wf, wfprobe, wfsound, wfloud, sound, call, makemacro, sync, check, weapon, swingstate, swingprobe, clicktest, selftest, totembar, macro, scan, slash, debug")
     end
 end
 
-SLASH_FOREVERTOTEMS1 = "/ft"
+--------------------------------------------------------------------------------
+-- The slash command
+--
+-- "/ft" is short and other addons want it as much as we do. Two of them
+-- claiming it means one simply loses, with no way of telling which. So: the
+-- long names always work, and if another addon is found holding "/ft" we stop
+-- claiming it from the next session on rather than fight over it. "/fortotems
+-- slash" takes it back.
+--------------------------------------------------------------------------------
+local yieldFT = type(ForeverTotemsDB) == "table" and ForeverTotemsDB.yieldFT
+if not yieldFT then SLASH_FOREVERTOTEMS1 = "/ft" end
 SLASH_FOREVERTOTEMS2 = "/forevertotems"
+SLASH_FOREVERTOTEMS3 = "/fortotems"
+SLASH_FOREVERTOTEMS4 = "/ftotems"
 SlashCmdList["FOREVERTOTEMS"] = HandleSlash
+
+-- Which other addon, if any, is also asking for a given slash token
+local function OtherClaimant(token)
+    for name, value in pairs(_G) do
+        if value == token and type(name) == "string"
+            and name:find("^SLASH_") and not name:find("^SLASH_FOREVERTOTEMS") then
+            return (name:match("^SLASH_(.-)%d*$")) or name
+        end
+    end
+    return nil
+end
 
 ns:On("READY", function()
     BuildWindow()
-    ns:Print("loaded. Type |cffffd100/ft|r to configure it.")
+
+    local other = OtherClaimant("/ft")
+    if other and not ns.db.yieldFT then
+        -- Leave it to them from the next session on: whoever wins today is
+        -- down to load order, which is no way to pick
+        ns.db.yieldFT = true
+        ns:Print(("another addon (%s) also answers to |cffffd100/ft|r, so it is yours from now on."):format(other))
+        ns:Print("Forever Totems answers to |cffffd100/fortotems|r. |cffffd100/fortotems slash|r takes /ft back.")
+        return
+    end
+
+    ns:Print(("loaded. Type |cffffd100%s|r to configure it."):format(
+        ns.db.yieldFT and "/fortotems" or "/ft"))
 end)
 
 ns:On("BINDS_CHANGED", function()

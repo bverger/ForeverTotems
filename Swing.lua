@@ -209,7 +209,7 @@ end
 -- Events
 --------------------------------------------------------------------------------
 local events = CreateFrame("Frame")
-events:SetScript("OnEvent", function(_, event, ...)
+local function HandleEvent(event, ...)
     if event == "PLAYER_ENTER_COMBAT" then
         Swing:Start(false)          -- auto attack started: predicted from here
     elseif event == "PLAYER_LEAVE_COMBAT" or event == "PLAYER_REGEN_ENABLED" then
@@ -233,6 +233,10 @@ events:SetScript("OnEvent", function(_, event, ...)
             end
         end
     end
+end
+
+events:SetScript("OnEvent", function(_, event, ...)
+    ns.Safely("the swing timer", HandleEvent, event, ...)
 end)
 
 function Swing:Enable()

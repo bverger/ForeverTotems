@@ -213,11 +213,13 @@ end
 
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, unit, action, descriptor, damage)
-    if event == "UNIT_COMBAT" then
-        if unit == "target" then Windfury:OnMelee(action, damage) end
-        return
-    end
-    Windfury:Recalibrate()
+    ns.Safely("the windfury watch", function()
+        if event == "UNIT_COMBAT" then
+            if unit == "target" then Windfury:OnMelee(action, damage) end
+            return
+        end
+        Windfury:Recalibrate()
+    end)
 end)
 
 function Windfury:Enable()

@@ -667,6 +667,40 @@ Step("y el escaneo de totems tampoco peta sin coordenadas", function()
     assert(ok, "ha petado al plantar un totem sin coordenadas")
 end)
 
+print("\n=== El comando /ft compartido ===")
+Step("responde tambien a los nombres largos", function()
+    assert(SLASH_FOREVERTOTEMS2 == "/forevertotems", "falta el nombre largo")
+    assert(SLASH_FOREVERTOTEMS3 == "/fortotems", "falta el alias corto")
+    assert(SLASH_FOREVERTOTEMS4 == "/ftotems", "falta el otro alias")
+end)
+Step("si otro addon tiene /ft, se lo deja", function()
+    _G.SLASH_FLIGHTTIMER1 = "/ft"
+    ns.db.yieldFT = false
+    local dicho = {}
+    local realPrint = ns.Print
+    ns.Print = function(self, text) dicho[#dicho + 1] = text end
+    ns:Fire("READY")
+    ns.Print = realPrint
+    _G.SLASH_FLIGHTTIMER1 = nil
+    assert(ns.db.yieldFT == true, "deberia cederlo")
+    local texto = table.concat(dicho, " ")
+    assert(texto:find("FLIGHTTIMER"), "deberia decir quien lo tiene: " .. texto)
+    assert(texto:find("/fortotems"), "deberia decir que usar en su lugar")
+end)
+Step("y se puede recuperar a mano", function()
+    SlashCmdList["FOREVERTOTEMS"]("slash")
+    assert(ns.db.yieldFT == false, "no lo ha reclamado")
+end)
+Step("sin nadie enfrente, no cambia nada", function()
+    local dicho = {}
+    local realPrint = ns.Print
+    ns.Print = function(self, text) dicho[#dicho + 1] = text end
+    ns:Fire("READY")
+    ns.Print = realPrint
+    assert(ns.db.yieldFT == false, "no hay con quien repartir")
+    assert(table.concat(dicho, " "):find("/ft"), "deberia seguir anunciando /ft")
+end)
+
 print("\n=== Red de seguridad ===")
 Step("un modulo que peta no se lleva por delante la barra", function()
     local real = ns.Swing.Update
@@ -1215,6 +1249,65 @@ Step("lee las cargas del buff", function()
     assert(ns.Shield:Charges() == 3, "cargas mal leidas: " .. ns.Shield:Charges())
     assert(ns.Bar.shieldButton.timer.__text == "3", "el boton deberia mostrar las cargas")
 end)
+-- Reportado en CurseForge: con otro chaman en el grupo, el escudo se volvia loco.
+Step("el Earth Shield de otro chaman no es el tuyo", function()
+    _G.__unit.player = { exists = true, auras = {
+        { name = "Earth Shield", applications = 9, expirationTime = GetTime() + 600,
+          isFromPlayerOrPlayerPet = false },
+        { name = "Lightning Shield", applications = 2, expirationTime = GetTime() + 600,
+          isFromPlayerOrPlayerPet = true },
+    } }
+    ns.Shield:SetChosen({ name = "Lightning Shield" })
+    ns.Shield:Refresh()
+    assert(ns.Shield:Charges() == 2,
+        "deberia contar tus cargas, no las del otro: " .. ns.Shield:Charges())
+end)
+Step("y si solo esta el suyo, para ti no hay escudo", function()
+    _G.__unit.player = { exists = true, auras = {
+        { name = "Earth Shield", applications = 9, expirationTime = GetTime() + 600,
+          isFromPlayerOrPlayerPet = false },
+    } }
+    ns.Shield:Refresh()
+    assert(not ns.Shield:IsUp(), "el escudo de otro no te protege de un aviso")
+end)
+Step("con sourceUnit en vez de la otra bandera, igual", function()
+    _G.__unit.player = { exists = true, auras = {
+        { name = "Earth Shield", applications = 9, expirationTime = GetTime() + 600,
+          sourceUnit = "party1" },
+        { name = "Lightning Shield", applications = 3, expirationTime = GetTime() + 600,
+          sourceUnit = "player" },
+    } }
+    ns.Shield:Refresh()
+    assert(ns.Shield:Charges() == 3, "deberia mirar quien lo lanzo")
+end)
+Step("sin saber quien lo lanzo, se queda con el tuyo elegido", function()
+    _G.__unit.player = { exists = true, auras = {
+        { name = "Earth Shield", applications = 9, expirationTime = GetTime() + 600 },
+        { name = "Lightning Shield", applications = 4, expirationTime = GetTime() + 600 },
+    } }
+    ns.Shield:Refresh()
+    assert(ns.Shield:Charges() == 4, "el de la barra manda cuando no hay mas datos")
+end)
+Step("un campo secreto en un buff no lo tumba", function()
+    _G.__unit.player = { exists = true, auras = {
+        { name = "Buff raro", applications = _G.__Secret() },
+        { name = "Lightning Shield", applications = 5, expirationTime = GetTime() + 600,
+          isFromPlayerOrPlayerPet = true },
+    } }
+    local ok = pcall(function() ns.Shield:Refresh() end)
+    assert(ok, "ha petado con un campo secreto")
+    assert(ns.Shield:Charges() == 5, "deberia seguir encontrando el tuyo")
+end)
+Step("y las cargas secretas no se pintan como un numero", function()
+    _G.__unit.player = { exists = true, auras = {
+        { name = "Lightning Shield", applications = _G.__Secret(),
+          expirationTime = GetTime() + 600, isFromPlayerOrPlayerPet = true },
+    } }
+    local ok = pcall(function() ns.Shield:Refresh() end)
+    assert(ok, "ha petado al leer las cargas")
+    assert(ns.Shield:Charges() == 0, "sin dato, cero")
+end)
+
 Step("avisa al entrar en combate sin escudo", function()
     local alerts = 0
     local real = ns.Warnings.Alert

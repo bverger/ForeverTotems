@@ -74,6 +74,26 @@ end
 --------------------------------------------------------------------------------
 -- Is one up, and with how many charges
 --------------------------------------------------------------------------------
+-- Any single field of an aura can come through secret, and reading one of
+-- those is an error, not a nil.
+local function Field(aura, key, default)
+    local value = aura[key]
+    if value == nil or ns.AnySecret(value) then return default end
+    return value
+end
+
+-- Someone else's shield on you is not your shield. A resto shaman in the group
+-- putting Earth Shield on you is the common case, and it used to be the one
+-- the button picked up, which is why a second shaman appeared to break it.
+-- Returns true, false, or nil when the client does not say.
+local function CastByYou(aura)
+    local mine = Field(aura, "isFromPlayerOrPlayerPet")
+    if mine ~= nil then return mine and true or false end
+    local source = Field(aura, "sourceUnit")
+    if source ~= nil then return source == "player" end
+    return nil
+end
+
 function Shield:Refresh()
     local names = {}
     for _, spell in ipairs(self:GetSpells()) do names[spell.name] = true end
@@ -86,20 +106,36 @@ function Shield:Refresh()
     end
     state.blocked = false
 
+    local chosen = self:GetChosen()
+    local wanted, other
+
     for _, aura in ipairs(auras) do
-        if not ns.AnySecret(aura) and aura.name and names[aura.name] then
-            state.active = true
-            state.name = aura.name
-            state.expires = aura.expirationTime or 0
-            -- Charges matter more than the clock on a shield
-            state.charges = aura.applications or aura.charges or 0
-            state.warned = false
-            if ns.Bar then ns.Bar:UpdateShieldButton() end
-            return
+        if not ns.AnySecret(aura) then
+            local name = Field(aura, "name")
+            if name and names[name] and CastByYou(aura) ~= false then
+                -- The one on the button wins; any other shield of yours is
+                -- better than nothing
+                if chosen and name == chosen.name then
+                    wanted = wanted or aura
+                else
+                    other = other or aura
+                end
+            end
         end
     end
 
-    state.active, state.charges, state.expires = false, 0, 0
+    local aura = wanted or other
+    if aura then
+        state.active = true
+        state.name = Field(aura, "name")
+        state.expires = Field(aura, "expirationTime", 0)
+        -- Charges matter more than the clock on a shield
+        state.charges = Field(aura, "applications") or Field(aura, "charges", 0)
+        state.warned = false
+    else
+        state.active, state.charges, state.expires = false, 0, 0
+    end
+
     if ns.Bar then ns.Bar:UpdateShieldButton() end
 end
 
@@ -135,16 +171,20 @@ end
 --------------------------------------------------------------------------------
 -- Events
 --------------------------------------------------------------------------------
+-- UNIT_AURA fires constantly in a group, so anything that goes wrong in here
+-- goes wrong hundreds of times. It is reported once and counted after that.
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event, unit)
-    if event == "PLAYER_REGEN_DISABLED" then
-        Shield:CheckForFight()
-    elseif event == "UNIT_AURA" then
-        if unit == "player" then Shield:Refresh() end
-    elseif event == "SPELLS_CHANGED" then
-        Shield.spells = nil
-        Shield:Refresh()
-    end
+    ns.Safely("the shield", function()
+        if event == "PLAYER_REGEN_DISABLED" then
+            Shield:CheckForFight()
+        elseif event == "UNIT_AURA" then
+            if unit == "player" then Shield:Refresh() end
+        elseif event == "SPELLS_CHANGED" then
+            Shield.spells = nil
+            Shield:Refresh()
+        end
+    end)
 end)
 
 function Shield:Enable()

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.6
+
+Fixed:
+
+- **The shield button with another shaman in the group.** A resto shaman
+  putting Earth Shield on you leaves that buff in your buff list, and the
+  button took the first shield it recognised by name, which could be theirs.
+  So the charges were wrong and the warning for walking into a fight without
+  one stopped firing, because something always matched. It checks who cast it
+  now, and falls back to the shield on the button when the client does not say.
+- Each field of a buff is checked on its own. One protected field on somebody
+  else's buff used to take the whole read down, and in a group that read runs
+  constantly.
+- Every event handler goes through the same net the bar's own work does: what
+  fails is reported once and listed under faults in `/ft check`.
+
+Changed:
+
+- **`/ft` is shared now.** If another addon already answers to it, this one
+  stops claiming it from the next session and says so at login, rather than
+  fighting over a command where whoever loads last wins. `/fortotems`,
+  `/ftotems` and `/forevertotems` always work, and `/fortotems slash` claims
+  `/ft` back.
+
 ## 1.0.5
 
 Fixed:

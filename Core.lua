@@ -75,6 +75,7 @@ local defaults = {
     },
     binds = { sequence = nil, slots = {} },
     rightClickDestroy = true,
+    yieldFT = false,     -- another addon wanted /ft more than we do
     callSpell = nil,     -- which "Call of ..." the bar button uses
     syncTotemBar = true, -- mirror the active set into the game's totem bar
     fallbackLastCast = true,

@@ -319,14 +319,16 @@ end
 --------------------------------------------------------------------------------
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_REGEN_DISABLED" then
-        Weapon:CheckForFight()
-    elseif event == "UNIT_INVENTORY_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
-        Weapon:Refresh()
-    elseif event == "SPELLS_CHANGED" then
-        Weapon.spells, Weapon.bases = nil, nil
-        Weapon:Refresh()
-    end
+    ns.Safely("the weapon imbue", function()
+        if event == "PLAYER_REGEN_DISABLED" then
+            Weapon:CheckForFight()
+        elseif event == "UNIT_INVENTORY_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
+            Weapon:Refresh()
+        elseif event == "SPELLS_CHANGED" then
+            Weapon.spells, Weapon.bases = nil, nil
+            Weapon:Refresh()
+        end
+    end)
 end)
 
 function Weapon:Enable()
